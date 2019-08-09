@@ -1,0 +1,36 @@
+#!/bin/bash
+docker build -t airflow-prometheus-exporter -f docker/Dockerfile .
+docker run -d -p 8080:8080 --name airflow-prometheus-exporter airflow-prometheus-exporter
+
+BASE_URL="http://localhost:8080"
+HEALTH_ENDPOINT="${BASE_URL}/health"
+METRICS_ENDPOINT="${BASE_URL}/admin/metrics/"
+NUM_ATTEMPS=10
+ATTEMPT_COUNTER=0
+
+echo "Waiting for Airflow to be ready at ${HEALTH_ENDPOINT}..."
+
+until $(curl --output /dev/null --silent --show-error --head --fail "${HEALTH_ENDPOINT}"); do
+    if [ ${ATTEMPT_COUNTER} -eq ${NUM_ATTEMPS} ];then
+      echo "Timeout: Airflow webserver not ready"
+      exit 1
+    fi
+
+    printf '.'
+    ATTEMPT_COUNTER=$(($ATTEMPT_COUNTER+1))
+    sleep 10
+done
+
+echo "Retrieving metrics from ${METRICS_ENDPOINT}..."
+curl --silent --show-error --fail "${METRICS_ENDPOINT}"
+
+STATUSCODE=$(curl --silent --output /dev/stderr --write-out "%{http_code}" "${METRICS_ENDPOINT}")
+
+docker stop airflow-prometheus-exporter
+docker rm airflow-prometheus-exporter
+
+if test $STATUSCODE -ne 200; then
+    # error handling
+    exit 1
+fi
+
