@@ -281,10 +281,10 @@ class MetricsCollector(object):
             labels=['task_id', 'dag_id', 'execution_date']
         )
         for task in get_task_duration_info():
-            task_duration = (task.end_date - task.start_date).total_seconds()
+            task_duration_value = (task.end_date - task.start_date).total_seconds()
             task_duration.add_metric(
                 [task.task_id, task.dag_id, str(task.execution_date.date())],
-                task_duration
+                task_duration_value
             )
         yield task_duration
 
@@ -320,10 +320,10 @@ class MetricsCollector(object):
             labels=['dag_id']
         )
         for dag in get_dag_duration_info():
-            dag_duration = (dag.end_date - dag.start_date).total_seconds()
+            dag_duration_value = (dag.end_date - dag.start_date).total_seconds()
             dag_duration.add_metric(
                 [dag.dag_id],
-                dag_duration
+                dag_duration_value
             )
         yield dag_duration
 
@@ -335,11 +335,11 @@ class MetricsCollector(object):
         )
 
         for dag in get_dag_scheduler_delay():
-            dag_scheduling_delay = (
+            dag_scheduling_delay_value = (
                 dag.start_date - dag.execution_date).total_seconds()
             dag_scheduler_delay.add_metric(
                 [dag.dag_id],
-                dag_scheduling_delay
+                dag_scheduling_delay_value
             )
         yield dag_scheduler_delay
 
@@ -350,11 +350,11 @@ class MetricsCollector(object):
         )
 
         for task in get_task_scheduler_delay():
-            task_scheduling_delay = (
+            task_scheduling_delay_value = (
                 task.start_date - task.queued_dttm).total_seconds()
             task_scheduler_delay.add_metric(
                 [task.queue],
-                task_scheduling_delay
+                task_scheduling_delay_value
             )
         yield task_scheduler_delay
 
