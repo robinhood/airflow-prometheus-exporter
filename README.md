@@ -1,5 +1,7 @@
 # Airflow Prometheus Exporter
 
+[![Build Status](https://travis-ci.org/robinhood/airflow-prometheus-exporter.svg?branch=master)](https://travis-ci.org/robinhood/airflow-prometheus-exporter)
+
 The Airflow Prometheus Exporter exposes various metrics about the Scheduler, DAGs and Tasks which helps improve the observability of an Airflow cluster.
 
 The exporter is based on this [prometheus exporter for Airflow](https://github.com/epoch8/airflow-exporter).
