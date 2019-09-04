@@ -4,4 +4,4 @@
 
 __author__ = """Robinhood Markets, Inc."""
 __email__ = 'open-source@robinhood.com'
-__version__ = '1.0.1'
+__version__ = '1.0.2'
