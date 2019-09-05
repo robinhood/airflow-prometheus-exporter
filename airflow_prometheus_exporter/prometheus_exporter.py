@@ -44,6 +44,9 @@ def get_dag_state_info():
         ).join(
             DagModel,
             DagModel.dag_id == dag_status_query.c.dag_id
+        ).filter(
+            DagModel.is_active == True,  # noqa
+            DagModel.is_paused == False,
         ).all()
 
 
@@ -53,7 +56,12 @@ def get_dag_duration_info():
         max_execution_dt_query = session.query(
             DagRun.dag_id,
             func.max(DagRun.execution_date).label('max_execution_dt')
+        ).join(
+            DagModel,
+            DagModel.dag_id == DagRun.dag_id
         ).filter(
+            DagModel.is_active == True,  # noqa
+            DagModel.is_paused == False,
             DagRun.state == State.SUCCESS,
             DagRun.end_date.isnot(None),
         ).group_by(
@@ -117,6 +125,9 @@ def get_task_state_info():
         ).join(
             DagModel,
             DagModel.dag_id == task_status_query.c.dag_id
+        ).filter(
+            DagModel.is_active == True,  # noqa
+            DagModel.is_paused == False,
         ).all()
 
 
@@ -127,6 +138,12 @@ def get_task_failure_counts():
             TaskFail.dag_id,
             TaskFail.task_id,
             func.count(TaskFail.dag_id).label('count')
+        ).join(
+            DagModel,
+            DagModel.dag_id == TaskFail.dag_id,
+        ).filter(
+            DagModel.is_active == True,  # noqa
+            DagModel.is_paused == False,
         ).group_by(
             TaskFail.dag_id,
             TaskFail.task_id,
@@ -139,7 +156,12 @@ def get_task_duration_info():
         max_execution_dt_query = session.query(
             DagRun.dag_id,
             func.max(DagRun.execution_date).label('max_execution_dt')
+        ).join(
+            DagModel,
+            DagModel.dag_id == DagRun.dag_id,
         ).filter(
+            DagModel.is_active == True,  # noqa
+            DagModel.is_paused == False,
             DagRun.state == State.SUCCESS,
             DagRun.end_date.isnot(None),
         ).group_by(
