@@ -42,7 +42,7 @@ setup(
     name='airflow_prometheus_exporter',
     packages=find_packages(include=['airflow_prometheus_exporter']),
     url='https://github.com/robinhood/airflow_prometheus_exporter',
-    version='1.0.3',
+    version='1.0.4',
     entry_points={
         'airflow.plugins': [
             'AirflowPrometheus = airflow_prometheus_exporter.prometheus_exporter:AirflowPrometheusPlugin'
