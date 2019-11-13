@@ -4,7 +4,7 @@ from contextlib import contextmanager
 
 from airflow.models import DagModel, DagRun, TaskInstance, TaskFail
 from airflow.plugins_manager import AirflowPlugin
-from airflow.settings import Session
+from airflow.settings import Session, RBAC
 from airflow.utils.state import State
 from flask import Response
 from flask_admin import BaseView, expose
@@ -368,15 +368,33 @@ class MetricsCollector(object):
 
 REGISTRY.register(MetricsCollector())
 
+if RBAC:
+    from flask_appbuilder import BaseView as FABBaseView, expose as FABexpose
 
-class Metrics(BaseView):
-    @expose('/')
-    def index(self):
-        return Response(generate_latest(), mimetype='text/plain')
+    class RBACMetrics(FABBaseView):
+        route_base = "/admin/metrics/"
+        @FABexpose('/')
+        def list(self):
+            return Response(generate_latest(), mimetype='text')
 
+    # Metrics View for Flask app builder used in airflow with rbac enabled
+    RBACmetricsView = {
+        "view": RBACMetrics(),
+        "name": "metrics",
+        "category": "Admin"
+    }
 
-ADMIN_VIEW = Metrics(category='Prometheus exporter', name='metrics')
+    ADMIN_VIEW = []
+    RBAC_VIEW = [RBACmetricsView]
 
+else:
+    class Metrics(BaseView):
+        @expose('/')
+        def index(self):
+            return Response(generate_latest(), mimetype='text/plain')
+
+    ADMIN_VIEW = [Metrics(category="Prometheus exporter", name="metrics")]
+    RBAC_VIEW = []
 
 class AirflowPrometheusPlugin(AirflowPlugin):
     """Airflow Pluging for collecting metrics."""
@@ -389,5 +407,5 @@ class AirflowPrometheusPlugin(AirflowPlugin):
     admin_views = [ADMIN_VIEW]
     flask_blueprints = []
     menu_links = []
-    appbuilder_views = []
+    appbuilder_views = [RBAC_VIEW]
     appbuilder_menu_items = []
