@@ -382,7 +382,7 @@ if RBAC:
     # Metrics View for Flask app builder used in airflow with rbac enabled
     RBACmetricsView = {
         "view": RBACMetrics(),
-        "name": "metrics",
+        "name": "Metrics",
         "category": "Admin"
     }
 
