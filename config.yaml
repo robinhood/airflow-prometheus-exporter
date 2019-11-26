@@ -1,0 +1,15 @@
+xcom_params:
+
+  -
+    task_id: publish_lif_file_metadata
+    key: record_count
+
+  -
+    task_id: map_csv_and_publish_metadata
+    key: record_count
+
+  -
+    task_id: convert_raw_to_lif
+    key: record_count
+
+
