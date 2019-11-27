@@ -4,8 +4,7 @@ from contextlib import contextmanager
 
 from airflow.models import DagModel, DagRun, TaskInstance, TaskFail
 from airflow.plugins_manager import AirflowPlugin
-from airflow.settings import Session
-from airflow.settings import RBAC
+from airflow.settings import RBAC, Session
 from airflow.utils.state import State
 from flask import Response
 from flask_admin import BaseView, expose
