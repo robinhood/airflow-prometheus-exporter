@@ -394,7 +394,7 @@ else:
         def index(self):
             return Response(generate_latest(), mimetype='text/plain')
 
-    ADMIN_VIEW = [Metrics(category="Prometheus exporter", name="metrics")]
+    ADMIN_VIEW = [Metrics(category="Prometheus exporter", name="Metrics")]
     RBAC_VIEW = []
 
 class AirflowPrometheusPlugin(AirflowPlugin):
@@ -405,8 +405,9 @@ class AirflowPrometheusPlugin(AirflowPlugin):
     hooks = []
     executors = []
     macros = []
-    admin_views = [ADMIN_VIEW]
+    admin_views = ADMIN_VIEW
     flask_blueprints = []
     menu_links = []
     appbuilder_views = RBAC_VIEW
+    appbuilder_views = []
     appbuilder_menu_items = []
