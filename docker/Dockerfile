@@ -10,7 +10,7 @@ RUN set -ex \
         build-essential \
         apt-utils \
     && useradd -ms /bin/bash -d ${AIRFLOW_USER_HOME} airflow \
-    && pip install -U pip
+    && pip install -U pip \
     && pip install apache-airflow
 
 COPY docker/airflow.sh ${AIRFLOW_USER_HOME}/airflow.sh
