@@ -12,4 +12,7 @@ xcom_params:
     task_id: convert_raw_to_lif
     key: record_count
 
+  -
+    task_id: bls_to_cdm_raw_to_lif
+    key: record_count
 
