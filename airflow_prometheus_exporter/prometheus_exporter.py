@@ -165,17 +165,23 @@ def get_xcom_params(task_id):
             DagRun.dag_id
         ).subquery()
 
-        return session.query(
-            XCom.dag_id,
-            XCom.value
-        ).join(max_execution_dt_query,
-               and_(
-                   (
-                    XCom.dag_id == max_execution_dt_query.c.dag_id
-                   ),
-                   (XCom.execution_date == max_execution_dt_query.c.max_execution_dt
-                   )
-               )).filter(XCom.task_id == task_id).all()
+        query = session.query(
+                XCom.dag_id,
+                XCom.task_id,
+                XCom.value
+            ).join(max_execution_dt_query,
+                   and_(
+                       (
+                        XCom.dag_id == max_execution_dt_query.c.dag_id
+                       ),
+                       (XCom.execution_date == max_execution_dt_query.c.max_execution_dt
+                       )
+                   ))
+        if task_id == 'all':
+            return query.all()
+        else:
+            return query.filter(XCom.task_id == task_id).all()
+
 
 
 def extract_xcom_parameter(value):
@@ -394,14 +400,21 @@ class MetricsCollector(object):
             labels = ['dag_id', 'task_id']
 
         )
+
         for tasks in xcom_config['xcom_params']:
             for param in get_xcom_params(tasks['task_id']):
-                xcom_value =  extract_xcom_parameter(param.value)
-                xcom_value = json.loads(xcom_value)
+                xcom_value = extract_xcom_parameter(param.value)
+                try:
+                    xcom_value = json.loads(xcom_value)
+                except:
+                    continue
+
                 if tasks['key'] in xcom_value:
-                    xcom_params.add_metric([param.dag_id, tasks['task_id']],xcom_value[tasks['key']])
+                    xcom_params.add_metric([param.dag_id, param.task_id], xcom_value[tasks['key']])
 
         yield xcom_params
+
+
 
         task_scheduler_delay = GaugeMetricFamily(
             'airflow_task_scheduler_delay',
