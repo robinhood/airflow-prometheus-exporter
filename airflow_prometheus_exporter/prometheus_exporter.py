@@ -395,8 +395,8 @@ class MetricsCollector(object):
         # XCOM parameters
 
         xcom_params = GaugeMetricFamily(
-            'record_count',
-            'Record Count',
+            'airflow_xcom_parameter',
+            'Airflow Xcom Parameter',
             labels = ['dag_id', 'task_id']
 
         )

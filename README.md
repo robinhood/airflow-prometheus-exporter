@@ -45,6 +45,17 @@ Duration of successful tasks in seconds.
 
 Number of times a particular task has failed.
 
+#### airflow_xcom_param
+
+value of configurable parameter in xcom table
+
+xcom fields is deserialized as a dictionary and if key is found for a paticular task-id, the value is reported as a guage
+
+add task / key combinations in config.yaml
+
+a task_id of 'all' will match against all airflow tasks
+
+
 ### Dag Specific Metrics
 
 #### `airflow_dag_status`
