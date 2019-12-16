@@ -2,21 +2,24 @@
 
 from contextlib import contextmanager
 
+from airflow.configuration import conf
 from airflow.models import DagModel, DagRun, TaskInstance, TaskFail, XCom
 from airflow.plugins_manager import AirflowPlugin
 from airflow.settings import Session
 from airflow.utils.state import State
+from airflow.utils.log.logging_mixin import LoggingMixin
+from airflow_prometheus_exporter.xcom_config import xcom_config
 from flask import Response
 from flask_admin import BaseView, expose
+import json
+import pickle
 from prometheus_client import generate_latest, REGISTRY
 from prometheus_client.core import GaugeMetricFamily
 from sqlalchemy import and_, func
-from airflow.configuration import conf
-from airflow_prometheus_exporter import xcom_config
 
-import pickle
-import json
-from airflow.utils.log.logging_mixin import LoggingMixin
+
+
+
 
 CANARY_DAG = 'canary_dag'
 
@@ -156,7 +159,7 @@ def get_task_failure_counts():
         )
 
 def get_xcom_params(task_id):
-    #get latest task_id, join to xcom table
+    """return the xcom parameters for matching task_id's for the latest run of each DAG"""
     with session_scope(Session) as session:
         max_execution_dt_query = session.query(
             DagRun.dag_id,
@@ -185,9 +188,16 @@ def get_xcom_params(task_id):
 
 
 def extract_xcom_parameter(value):
+    """deserializes value stored in xcom table.  Either pickle or json.  return python dict or {}"""
     enable_pickling = conf.getboolean('core', 'enable_xcom_pickling')
     if enable_pickling:
-        return pickle.loads(value)
+        value = pickle.loads(value)
+        try:
+            value = json.loads(value)
+            return value
+        except:
+            return {}
+
     else:
         try:
             return json.loads(value.decode('UTF-8'))
@@ -197,7 +207,8 @@ def extract_xcom_parameter(value):
                       "If you are using pickles instead of JSON "
                       "for XCOM, then you need to enable pickle "
                       "support for XCOM in your airflow config.")
-            raise
+            return {}
+
 
 
 def get_task_duration_info():
@@ -404,10 +415,6 @@ class MetricsCollector(object):
         for tasks in xcom_config['xcom_params']:
             for param in get_xcom_params(tasks['task_id']):
                 xcom_value = extract_xcom_parameter(param.value)
-                try:
-                    xcom_value = json.loads(xcom_value)
-                except:
-                    continue
 
                 if tasks['key'] in xcom_value:
                     xcom_params.add_metric([param.dag_id, param.task_id], xcom_value[tasks['key']])
