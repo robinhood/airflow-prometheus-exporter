@@ -1,9 +1,8 @@
-
 import yaml
 import os
 
 dir = os.path.dirname(__file__)
-filename = os.path.join(dir, '../config.yaml')
+filename = os.path.join(dir, "../config.yaml")
 
 
 xcom_config = {}
