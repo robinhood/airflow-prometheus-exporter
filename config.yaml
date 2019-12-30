@@ -1,0 +1,7 @@
+xcom_params:
+
+  -
+    task_id: all
+    key: record_count
+
+

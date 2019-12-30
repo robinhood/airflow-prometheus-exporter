@@ -2,15 +2,24 @@
 
 from contextlib import contextmanager
 
-from airflow.models import DagModel, DagRun, TaskInstance, TaskFail
+from airflow.configuration import conf
+from airflow.models import DagModel, DagRun, TaskInstance, TaskFail, XCom
 from airflow.plugins_manager import AirflowPlugin
 from airflow.settings import Session
 from airflow.utils.state import State
+from airflow.utils.log.logging_mixin import LoggingMixin
+from airflow_prometheus_exporter.xcom_config import xcom_config
 from flask import Response
 from flask_admin import BaseView, expose
+import json
+import pickle
 from prometheus_client import generate_latest, REGISTRY
 from prometheus_client.core import GaugeMetricFamily
 from sqlalchemy import and_, func
+
+
+
+
 
 CANARY_DAG = 'canary_dag'
 
@@ -148,6 +157,58 @@ def get_task_failure_counts():
             TaskFail.dag_id,
             TaskFail.task_id,
         )
+
+def get_xcom_params(task_id):
+    """return the xcom parameters for matching task_id's for the latest run of each DAG"""
+    with session_scope(Session) as session:
+        max_execution_dt_query = session.query(
+            DagRun.dag_id,
+            func.max(DagRun.execution_date).label('max_execution_dt')
+        ).group_by(
+            DagRun.dag_id
+        ).subquery()
+
+        query = session.query(
+                XCom.dag_id,
+                XCom.task_id,
+                XCom.value
+            ).join(max_execution_dt_query,
+                   and_(
+                       (
+                        XCom.dag_id == max_execution_dt_query.c.dag_id
+                       ),
+                       (XCom.execution_date == max_execution_dt_query.c.max_execution_dt
+                       )
+                   ))
+        if task_id == 'all':
+            return query.all()
+        else:
+            return query.filter(XCom.task_id == task_id).all()
+
+
+
+def extract_xcom_parameter(value):
+    """deserializes value stored in xcom table.  Either pickle or json.  return python dict or {}"""
+    enable_pickling = conf.getboolean('core', 'enable_xcom_pickling')
+    if enable_pickling:
+        value = pickle.loads(value)
+        try:
+            value = json.loads(value)
+            return value
+        except:
+            return {}
+
+    else:
+        try:
+            return json.loads(value.decode('UTF-8'))
+        except ValueError:
+            log = LoggingMixin().log
+            log.error("Could not deserialize the XCOM value from JSON. "
+                      "If you are using pickles instead of JSON "
+                      "for XCOM, then you need to enable pickle "
+                      "support for XCOM in your airflow config.")
+            return {}
+
 
 
 def get_task_duration_info():
@@ -340,6 +401,27 @@ class MetricsCollector(object):
                 dag_scheduling_delay_value
             )
         yield dag_scheduler_delay
+
+
+        # XCOM parameters
+
+        xcom_params = GaugeMetricFamily(
+            'airflow_xcom_parameter',
+            'Airflow Xcom Parameter',
+            labels = ['dag_id', 'task_id']
+
+        )
+
+        for tasks in xcom_config['xcom_params']:
+            for param in get_xcom_params(tasks['task_id']):
+                xcom_value = extract_xcom_parameter(param.value)
+
+                if tasks['key'] in xcom_value:
+                    xcom_params.add_metric([param.dag_id, param.task_id], xcom_value[tasks['key']])
+
+        yield xcom_params
+
+
 
         task_scheduler_delay = GaugeMetricFamily(
             'airflow_task_scheduler_delay',
