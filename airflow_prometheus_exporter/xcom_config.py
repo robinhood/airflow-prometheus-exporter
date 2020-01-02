@@ -1,12 +1,15 @@
 import yaml
-import os
+from pathlib import Path
 
-dir = os.path.dirname(__file__)
-filename = os.path.join(dir, "../config.yaml")
+CONFIG_FILE = Path.cwd() / "config.yaml"
 
 
-xcom_config = {}
-with open(filename) as file:
-    # The FullLoader parameter handles the conversion from YAML
-    # scalar values to Python the dictionary format
-    xcom_config = yaml.load(file, Loader=yaml.FullLoader)
+def load_xcom_config():
+    """Loads the XCom config if present."""
+    try:
+        with open(CONFIG_FILE) as file:
+            # The FullLoader parameter handles the conversion from YAML
+            # scalar values to Python the dictionary format
+            return yaml.load(file, Loader=yaml.FullLoader)
+    except FileNotFoundError:
+        return {}

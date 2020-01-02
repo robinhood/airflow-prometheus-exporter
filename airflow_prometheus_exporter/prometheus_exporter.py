@@ -1,5 +1,6 @@
 """Prometheus exporter for Airflow."""
-
+import json
+import pickle
 from contextlib import contextmanager
 
 from airflow.configuration import conf
@@ -8,15 +9,13 @@ from airflow.plugins_manager import AirflowPlugin
 from airflow.settings import Session
 from airflow.utils.state import State
 from airflow.utils.log.logging_mixin import LoggingMixin
-from airflow_prometheus_exporter.xcom_config import xcom_config
 from flask import Response
 from flask_admin import BaseView, expose
-import json
-import pickle
 from prometheus_client import generate_latest, REGISTRY
 from prometheus_client.core import GaugeMetricFamily
 from sqlalchemy import and_, func
 
+from airflow_prometheus_exporter.xcom_config import load_xcom_config
 
 CANARY_DAG = "canary_dag"
 
@@ -439,7 +438,8 @@ class MetricsCollector(object):
             labels=["dag_id", "task_id"],
         )
 
-        for tasks in xcom_config["xcom_params"]:
+        xcom_config = load_xcom_config()
+        for tasks in xcom_config.get("xcom_params", []):
             for param in get_xcom_params(tasks["task_id"]):
                 xcom_value = extract_xcom_parameter(param.value)
 
