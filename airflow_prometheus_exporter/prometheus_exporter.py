@@ -170,12 +170,12 @@ def get_task_failure_counts():
                 TaskFail.task_id,
                 func.count(TaskFail.dag_id).label("count"),
             )
-            .join(DagModel, DagModel.dag_id == TaskFail.dag_id, )
+            .join(DagModel, DagModel.dag_id == TaskFail.dag_id,)
             .filter(
                 DagModel.is_active == True,  # noqa
                 DagModel.is_paused == False,
             )
-            .group_by(TaskFail.dag_id, TaskFail.task_id, )
+            .group_by(TaskFail.dag_id, TaskFail.task_id,)
         )
 
 
@@ -196,8 +196,8 @@ def get_xcom_params(task_id):
             and_(
                 (XCom.dag_id == max_execution_dt_query.c.dag_id),
                 (
-                     XCom.execution_date
-                     == max_execution_dt_query.c.max_execution_dt
+                    XCom.execution_date
+                    == max_execution_dt_query.c.max_execution_dt
                 ),
             ),
         )
@@ -239,7 +239,7 @@ def get_task_duration_info():
                 DagRun.dag_id,
                 func.max(DagRun.execution_date).label("max_execution_dt"),
             )
-            .join(DagModel, DagModel.dag_id == DagRun.dag_id, )
+            .join(DagModel, DagModel.dag_id == DagRun.dag_id,)
             .filter(
                 DagModel.is_active == True,  # noqa
                 DagModel.is_paused == False,
@@ -289,7 +289,7 @@ def get_dag_scheduler_delay():
             session.query(
                 DagRun.dag_id, DagRun.execution_date, DagRun.start_date,
             )
-            .filter(DagRun.dag_id == CANARY_DAG, )
+            .filter(DagRun.dag_id == CANARY_DAG,)
             .order_by(DagRun.execution_date.desc())
             .limit(1)
             .all()
