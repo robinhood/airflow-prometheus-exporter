@@ -77,7 +77,6 @@ def get_dag_duration_info():
                 DagModel.is_paused == False,
                 DagRun.state == State.SUCCESS,
                 DagRun.end_date.isnot(None),
-                DagRun.start_date.isnot(None),
             )
             .group_by(DagRun.dag_id)
             .subquery()
