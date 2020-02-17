@@ -44,6 +44,7 @@ def get_dag_state_info():
                 func.count(DagRun.state).label("count"),
             )
             .group_by(DagRun.dag_id, DagRun.state)
+            .filter(DagRun.state.isnot(None))
             .subquery()
         )
         return (
@@ -76,6 +77,7 @@ def get_dag_duration_info():
                 DagModel.is_paused == False,
                 DagRun.state == State.SUCCESS,
                 DagRun.end_date.isnot(None),
+                DagRun.start_date.isnot(None),
             )
             .group_by(DagRun.dag_id)
             .subquery()
@@ -188,6 +190,9 @@ def get_xcom_params(task_id):
                 func.max(DagRun.execution_date).label("max_execution_dt"),
             )
             .group_by(DagRun.dag_id)
+            .filter(
+                TaskInstance.state.isnot(None),
+            )
             .subquery()
         )
 
@@ -375,7 +380,7 @@ class MetricsCollector(object):
                 task.end_date - task.start_date
             ).total_seconds()
             task_duration.add_metric(
-                [task.task_id, task.dag_id, str(task.execution_date.date())],
+                [task.task_id, task.dag_id, task.execution_date.strftime("%Y-%m-%d-%H-%M")],
                 task_duration_value,
             )
         yield task_duration
