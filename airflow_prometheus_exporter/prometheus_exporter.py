@@ -7,6 +7,7 @@ from airflow.configuration import conf
 from airflow.models import DagModel, DagRun, TaskInstance, TaskFail, XCom
 from airflow.plugins_manager import AirflowPlugin
 from airflow.settings import RBAC, Session
+from airflow.utils.dates import date_range
 from airflow.utils.state import State
 from airflow.utils.log.logging_mixin import LoggingMixin
 from flask import Response
@@ -277,6 +278,57 @@ def get_task_duration_info():
         )
 
 
+def get_landing_times():
+    """Duration of successful tasks in seconds."""
+    with session_scope(Session) as session:
+        max_execution_dt_query = (
+            session.query(
+                DagRun.dag_id,
+                func.max(DagRun.execution_date).label("max_execution_dt"),
+            )
+            .join(DagModel, DagModel.dag_id == DagRun.dag_id,)
+            .filter(
+                DagModel.is_active == True,  # noqa
+                DagModel.is_paused == False,
+                DagRun.state == State.SUCCESS,
+                DagRun.end_date.isnot(None),
+            )
+            .group_by(DagRun.dag_id)
+            .subquery()
+        )
+
+        return (
+            session.query(
+                TaskInstance.dag_id,
+                TaskInstance.task_id,
+                TaskInstance.start_date,
+                TaskInstance.end_date,
+                TaskInstance.execution_date,
+                DagModel.schedule_interval,
+            )
+            .join(
+                max_execution_dt_query,
+                and_(
+                    (TaskInstance.dag_id == max_execution_dt_query.c.dag_id),
+                    (
+                        TaskInstance.execution_date
+                        == max_execution_dt_query.c.max_execution_dt
+                    ),
+                ),
+            )
+            .join(
+                 DagModel,
+                 DagModel.dag_id == TaskInstance.dag_id,
+            )
+            .filter(
+                TaskInstance.state == State.SUCCESS,
+                TaskInstance.start_date.isnot(None),
+                TaskInstance.end_date.isnot(None),
+            )
+            .all()
+        )
+
+
 ######################
 # Scheduler Related Metrics
 ######################
@@ -390,6 +442,21 @@ class MetricsCollector(object):
                 [task.dag_id, task.task_id], task.count
             )
         yield task_failure_count
+
+        landing_time = GaugeMetricFamily(
+            "airflow_landing_times",
+            "Landing times of the dag in seconds",
+            labels=["task_id", "dag_id", "execution_date"],
+        )
+        for task in get_landing_times():
+            task_duration_value = (
+                task.end_date - date_range(task.execution_date, num=2, delta=task.schedule_interval)[1]
+            ).total_seconds()
+            landing_time.add_metric(
+                [task.task_id, task.dag_id, task.execution_date.strftime("%Y-%m-%d-%H-%M")],
+                task_duration_value,
+            )
+        yield landing_time
 
         # Dag Metrics
         dag_info = get_dag_state_info()
