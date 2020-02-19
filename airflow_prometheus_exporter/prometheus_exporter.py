@@ -2,9 +2,11 @@
 
 import json
 import pickle
+import logging
+from functools import wraps
 from contextlib import contextmanager
 
-from flask import Response
+from flask import request, Response
 from sqlalchemy import and_, func
 from flask_admin import BaseView, expose
 from prometheus_client.core import GaugeMetricFamily
@@ -15,9 +17,7 @@ from airflow.configuration import conf
 from airflow.settings import RBAC, Session
 from airflow.plugins_manager import AirflowPlugin
 from airflow.utils.log.logging_mixin import LoggingMixin
-from airflow.models import DagModel, DagRun, TaskInstance, TaskFail, XCom
-
-from airflow_prometheus_exporter.xcom_config import load_xcom_config
+from airflow.models import DagModel, DagRun, TaskInstance, TaskFail
 
 
 CANARY_DAG = "canary_dag"
@@ -164,55 +164,6 @@ def get_task_failure_counts():
             .filter(DagModel.is_active == True, DagModel.is_paused == False,)  # noqa
             .group_by(TaskFail.dag_id, TaskFail.task_id,)
         )
-
-
-def get_xcom_params(task_id):
-    """xcom parameters for matching task_id's for the latest run of a DAG"""
-    with session_scope(Session) as session:
-        max_execution_dt_query = (
-            session.query(
-                DagRun.dag_id,
-                func.max(DagRun.execution_date).label("max_execution_dt"),
-            )
-            .group_by(DagRun.dag_id)
-            .subquery()
-        )
-
-        query = session.query(XCom.dag_id, XCom.task_id, XCom.value).join(
-            max_execution_dt_query,
-            and_(
-                (XCom.dag_id == max_execution_dt_query.c.dag_id),
-                (XCom.execution_date == max_execution_dt_query.c.max_execution_dt),
-            ),
-        )
-        if task_id == "all":
-            return query.all()
-        else:
-            return query.filter(XCom.task_id == task_id).all()
-
-
-def extract_xcom_parameter(value):
-    """Deserializes value stored in xcom table"""
-    enable_pickling = conf.getboolean("core", "enable_xcom_pickling")
-    if enable_pickling:
-        value = pickle.loads(value)
-        try:
-            value = json.loads(value)
-            return value
-        except Exception:
-            return {}
-    else:
-        try:
-            return json.loads(value.decode("UTF-8"))
-        except ValueError:
-            log = LoggingMixin().log
-            log.error(
-                "Could not deserialize the xcom value from json. "
-                "If you are using pickles instead of json "
-                "for xcom, then you need to enable pickle "
-                "support for xcom in your airflow config."
-            )
-            return {}
 
 
 def get_task_duration_info():
@@ -404,25 +355,6 @@ class MetricsCollector(object):
             dag_scheduler_delay.add_metric([dag.dag_id], dag_scheduling_delay_value)
         yield dag_scheduler_delay
 
-        # XCOM parameters
-        xcom_params = GaugeMetricFamily(
-            "airflow_xcom_parameter",
-            "Airflow xcom parameter",
-            labels=["dag_id", "task_id"],
-        )
-
-        xcom_config = load_xcom_config()
-        for tasks in xcom_config.get("xcom_params", []):
-            for param in get_xcom_params(tasks["task_id"]):
-                xcom_value = extract_xcom_parameter(param.value)
-
-                if tasks["key"] in xcom_value:
-                    xcom_params.add_metric(
-                        [param.dag_id, param.task_id], xcom_value[tasks["key"]]
-                    )
-
-        yield xcom_params
-
         task_scheduler_delay = GaugeMetricFamily(
             "airflow_task_scheduler_delay",
             "Airflow task scheduling delay",
@@ -447,11 +379,28 @@ class MetricsCollector(object):
 
 REGISTRY.register(MetricsCollector())
 
+
+def valid_token(request_token):
+    auth_token = conf.get("user", "auth_token")
+    return auth_token == request_token
+
+
+def has_access(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        authorization = request.headers["Authorization"]
+        request_token = authorization.replace("token ", "")
+        if not request_token or not valid_token(request_token):
+            return Response("Invalid token!", 401)
+        return f(*args, **kwargs)
+
+    return wrapper
+
+
 if RBAC:
     from flask_appbuilder import (
         BaseView as FABBaseView,
         expose as FABexpose,
-        has_access,
     )
 
     class RBACMetrics(FABBaseView):
@@ -468,12 +417,15 @@ if RBAC:
     RBAC_VIEW = [RBACmetricsView]
 else:
 
-    class Metrics(BaseView):
+    class BaseMetrics(BaseView):
         @expose("/")
+        @has_access
         def index(self):
             return Response(generate_latest(), mimetype="text/plain")
 
-    ADMIN_VIEW = [Metrics(category="Prometheus exporter", name="Metrics")]
+    ADMIN_VIEW = [
+        BaseMetrics(category="Prometheus exporter", name="Metrics", endpoint="metrics")
+    ]
     RBAC_VIEW = []
 
 
