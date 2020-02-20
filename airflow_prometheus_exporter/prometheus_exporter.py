@@ -388,7 +388,13 @@ def valid_token(request_token):
 def has_access(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        authorization = request.headers["Authorization"]
+        print(request)
+        print(request.headers)
+
+        authorization = request.headers.get("Authorization", None)
+        if authorization is None:
+            return Response("Bad request!", 400)
+
         request_token = authorization.split(" ")[1]
         if not request_token or not valid_token(request_token):
             return Response("Invalid token!", 401)
