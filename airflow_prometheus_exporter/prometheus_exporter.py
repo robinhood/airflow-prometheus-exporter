@@ -382,7 +382,7 @@ REGISTRY.register(MetricsCollector())
 
 def valid_token(request_token):
     api_token = conf.get("user", "api_token")
-    return request_token.startswith(api_token)
+    return api_token == request_token
 
 
 def has_access(f):
