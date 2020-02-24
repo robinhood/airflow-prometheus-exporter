@@ -35,7 +35,7 @@ Metrics will be available at
 
 Number of DAGs with a specific status.
 
-All the possible states are listed [here](https://github.com/apache/airflow/blob/master/airflow/utils/state.py#L59)
+All the possible states are listed [here](https://github.com/apache/airflow/blob/master/airflow/utils/state.py#L59).
 
 #### `airflow_dag_run_duration`
 Duration of successful DagRun in seconds.
