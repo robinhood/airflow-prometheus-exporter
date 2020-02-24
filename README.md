@@ -29,6 +29,17 @@ Metrics will be available at
 
 `http://<your_airflow_host_and_port>/admin/metrics/`
 
+### Dag Specific Metrics
+
+#### `airflow_dag_status`
+
+Number of DAGs with a specific status.
+
+All the possible states are listed [here](https://github.com/apache/airflow/blob/master/airflow/utils/state.py#L59)
+
+#### `airflow_dag_run_duration`
+Duration of successful DagRun in seconds.
+
 ### Task Specific Metrics
 
 #### `airflow_task_status`
@@ -44,48 +55,6 @@ Duration of successful tasks in seconds.
 #### `airflow_task_fail_count`
 
 Number of times a particular task has failed.
-
-#### `airflow_xcom_param`
-
-value of configurable parameter in xcom table
-
-xcom fields is deserialized as a dictionary and if key is found for a paticular task-id, the value is reported as a guage
-
-Add task / key combinations in config.yaml:
-
-```bash
-xcom_params:
-  -
-    task_id: abc
-    key: count
-  -
-    task_id: def
-    key: errors
-
-```
-
-
-a task_id of 'all' will match against all airflow tasks:
-
-```
-xcom_params:
- -
-    task_id: all
-    key: count
-```
-
-
-
-### Dag Specific Metrics
-
-#### `airflow_dag_status`
-
-Number of DAGs with a specific status.
-
-All the possible states are listed [here](https://github.com/apache/airflow/blob/master/airflow/utils/state.py#L59)
-
-#### `airflow_dag_run_duration`
-Duration of successful DagRun in seconds.
 
 ### Scheduler Metrics
 
