@@ -281,10 +281,11 @@ def get_task_duration_info():
 def get_landing_times():
     """Duration of successful tasks in seconds."""
     with session_scope(Session) as session:
-        max_execution_dt_query = (
+        max_execution_date_query = (
             session.query(
                 DagRun.dag_id,
-                func.max(DagRun.execution_date).label("max_execution_dt"),
+                DagModel.schedule_interval,
+                func.max(DagRun.execution_date).label("max_execution_date"),
             )
             .join(DagModel, DagModel.dag_id == DagRun.dag_id,)
             .filter(
@@ -293,7 +294,7 @@ def get_landing_times():
                 DagRun.state == State.SUCCESS,
                 DagRun.end_date.isnot(None),
             )
-            .group_by(DagRun.dag_id)
+            .group_by(DagRun.dag_id, DagModel.schedule_interval)
             .subquery()
         )
 
@@ -301,24 +302,19 @@ def get_landing_times():
             session.query(
                 TaskInstance.dag_id,
                 TaskInstance.task_id,
-                TaskInstance.start_date,
                 TaskInstance.end_date,
                 TaskInstance.execution_date,
-                DagModel.schedule_interval,
+                max_execution_date_query.c.schedule_interval,
             )
             .join(
-                max_execution_dt_query,
+                max_execution_date_query,
                 and_(
-                    (TaskInstance.dag_id == max_execution_dt_query.c.dag_id),
+                    (TaskInstance.dag_id == max_execution_date_query.c.dag_id),
                     (
                         TaskInstance.execution_date
-                        == max_execution_dt_query.c.max_execution_dt
+                        == max_execution_date_query.c.max_execution_date
                     ),
                 ),
-            )
-            .join(
-                 DagModel,
-                 DagModel.dag_id == TaskInstance.dag_id,
             )
             .filter(
                 TaskInstance.state == State.SUCCESS,
@@ -445,7 +441,7 @@ class MetricsCollector(object):
 
         landing_time = GaugeMetricFamily(
             "airflow_landing_times",
-            "Landing times of the dag in seconds",
+            "Landing times of each task in seconds",
             labels=["task_id", "dag_id", "execution_date"],
         )
         for task in get_landing_times():
