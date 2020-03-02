@@ -413,6 +413,7 @@ class MetricsCollector(object):
             )
         yield t_state
 
+'''
         task_duration = GaugeMetricFamily(
             "airflow_task_duration",
             "Duration of successful tasks in seconds",
@@ -427,7 +428,7 @@ class MetricsCollector(object):
                 task_duration_value,
             )
         yield task_duration
-
+'''
         task_failure_count = GaugeMetricFamily(
             "airflow_task_fail_count",
             "Count of failed tasks",
@@ -464,7 +465,7 @@ class MetricsCollector(object):
         for dag in dag_info:
             d_state.add_metric([dag.dag_id, dag.owners, dag.state], dag.count)
         yield d_state
-
+'''
         dag_duration = GaugeMetricFamily(
             "airflow_dag_run_duration",
             "Duration of successful dag_runs in seconds",
@@ -535,7 +536,7 @@ class MetricsCollector(object):
         num_queued_tasks = get_num_queued_tasks()
         num_queued_tasks_metric.add_metric([], num_queued_tasks)
         yield num_queued_tasks_metric
-
+'''
 
 REGISTRY.register(MetricsCollector())
 
