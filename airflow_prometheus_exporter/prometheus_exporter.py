@@ -45,6 +45,7 @@ def get_dag_state_info():
                 func.count(DagRun.state).label("count"),
             )
             .group_by(DagRun.dag_id, DagRun.state)
+            .filter(DagRun.state.isnot(None))
             .subquery()
         )
         return (
@@ -189,6 +190,9 @@ def get_xcom_params(task_id):
                 func.max(DagRun.execution_date).label("max_execution_dt"),
             )
             .group_by(DagRun.dag_id)
+            .filter(
+                TaskInstance.state.isnot(None),
+            )
             .subquery()
         )
 
