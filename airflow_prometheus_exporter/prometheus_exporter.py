@@ -7,6 +7,7 @@ from airflow.configuration import conf
 from airflow.models import DagModel, DagRun, TaskInstance, TaskFail, XCom
 from airflow.plugins_manager import AirflowPlugin
 from airflow.settings import RBAC, Session
+from airflow.utils.dates import date_range
 from airflow.utils.state import State
 from airflow.utils.log.logging_mixin import LoggingMixin
 from flask import Response
@@ -281,6 +282,53 @@ def get_task_duration_info():
         )
 
 
+def get_landing_times():
+    """Duration of successful tasks in seconds."""
+    with session_scope(Session) as session:
+        max_execution_date_query = (
+            session.query(
+                DagRun.dag_id,
+                DagModel.schedule_interval,
+                func.max(DagRun.execution_date).label("max_execution_date"),
+            )
+            .join(DagModel, DagModel.dag_id == DagRun.dag_id,)
+            .filter(
+                DagModel.is_active == True,  # noqa
+                DagModel.is_paused == False,
+                DagRun.state == State.SUCCESS,
+                DagRun.end_date.isnot(None),
+            )
+            .group_by(DagRun.dag_id, DagModel.schedule_interval)
+            .subquery()
+        )
+
+        return (
+            session.query(
+                TaskInstance.dag_id,
+                TaskInstance.task_id,
+                TaskInstance.end_date,
+                TaskInstance.execution_date,
+                max_execution_date_query.c.schedule_interval,
+            )
+            .join(
+                max_execution_date_query,
+                and_(
+                    (TaskInstance.dag_id == max_execution_date_query.c.dag_id),
+                    (
+                        TaskInstance.execution_date
+                        == max_execution_date_query.c.max_execution_date
+                    ),
+                ),
+            )
+            .filter(
+                TaskInstance.state == State.SUCCESS,
+                TaskInstance.start_date.isnot(None),
+                TaskInstance.end_date.isnot(None),
+            )
+            .all()
+        )
+
+
 ######################
 # Scheduler Related Metrics
 ######################
@@ -369,20 +417,21 @@ class MetricsCollector(object):
             )
         yield t_state
 
-        task_duration = GaugeMetricFamily(
-            "airflow_task_duration",
-            "Duration of successful tasks in seconds",
-            labels=["task_id", "dag_id", "execution_date"],
-        )
-        for task in get_task_duration_info():
-            task_duration_value = (
-                task.end_date - task.start_date
-            ).total_seconds()
-            task_duration.add_metric(
-                [task.task_id, task.dag_id, task.execution_date.strftime("%Y-%m-%d-%H-%M")],
-                task_duration_value,
-            )
-        yield task_duration
+        # Removed for performance, as we ignore this metrics
+        # task_duration = GaugeMetricFamily(
+        #     "airflow_task_duration",
+        #     "Duration of successful tasks in seconds",
+        #     labels=["task_id", "dag_id", "execution_date"],
+        # )
+        # for task in get_task_duration_info():
+        #     task_duration_value = (
+        #         task.end_date - task.start_date
+        #     ).total_seconds()
+        #     task_duration.add_metric(
+        #         [task.task_id, task.dag_id, str(task.execution_date.date())],
+        #         task_duration_value,
+        #     )
+        # yield task_duration
 
         task_failure_count = GaugeMetricFamily(
             "airflow_task_fail_count",
@@ -395,6 +444,21 @@ class MetricsCollector(object):
             )
         yield task_failure_count
 
+        landing_time = GaugeMetricFamily(
+            "airflow_landing_times",
+            "Landing times of each task in seconds",
+            labels=["task_id", "dag_id", "execution_date"],
+        )
+        for task in get_landing_times():
+            task_duration_value = (
+                task.end_date - date_range(task.execution_date, num=2, delta=task.schedule_interval)[1]
+            ).total_seconds()
+            landing_time.add_metric(
+                [task.task_id, task.dag_id, task.execution_date.strftime("%Y-%m-%d-%H-%M")],
+                task_duration_value,
+            )
+        yield landing_time
+
         # Dag Metrics
         dag_info = get_dag_state_info()
         d_state = GaugeMetricFamily(
@@ -406,76 +470,77 @@ class MetricsCollector(object):
             d_state.add_metric([dag.dag_id, dag.owners, dag.state], dag.count)
         yield d_state
 
-        dag_duration = GaugeMetricFamily(
-            "airflow_dag_run_duration",
-            "Duration of successful dag_runs in seconds",
-            labels=["dag_id"],
-        )
-        for dag in get_dag_duration_info():
-            dag_duration_value = (
-                dag.end_date - dag.start_date
-            ).total_seconds()
-            dag_duration.add_metric([dag.dag_id], dag_duration_value)
-        yield dag_duration
+        # Removed for performance, as we ignore this metrics
+        # dag_duration = GaugeMetricFamily(
+        #     "airflow_dag_run_duration",
+        #     "Duration of successful dag_runs in seconds",
+        #     labels=["dag_id"],
+        # )
+        # for dag in get_dag_duration_info():
+        #     dag_duration_value = (
+        #         dag.end_date - dag.start_date
+        #     ).total_seconds()
+        #     dag_duration.add_metric([dag.dag_id], dag_duration_value)
+        # yield dag_duration
 
-        # Scheduler Metrics
-        dag_scheduler_delay = GaugeMetricFamily(
-            "airflow_dag_scheduler_delay",
-            "Airflow DAG scheduling delay",
-            labels=["dag_id"],
-        )
+        # # Scheduler Metrics
+        # dag_scheduler_delay = GaugeMetricFamily(
+        #     "airflow_dag_scheduler_delay",
+        #     "Airflow DAG scheduling delay",
+        #     labels=["dag_id"],
+        # )
 
-        for dag in get_dag_scheduler_delay():
-            dag_scheduling_delay_value = (
-                dag.start_date - dag.execution_date
-            ).total_seconds()
-            dag_scheduler_delay.add_metric(
-                [dag.dag_id], dag_scheduling_delay_value
-            )
-        yield dag_scheduler_delay
+        # for dag in get_dag_scheduler_delay():
+        #     dag_scheduling_delay_value = (
+        #         dag.start_date - dag.execution_date
+        #     ).total_seconds()
+        #     dag_scheduler_delay.add_metric(
+        #         [dag.dag_id], dag_scheduling_delay_value
+        #     )
+        # yield dag_scheduler_delay
 
-        # XCOM parameters
+        # # XCOM parameters
 
-        xcom_params = GaugeMetricFamily(
-            "airflow_xcom_parameter",
-            "Airflow Xcom Parameter",
-            labels=["dag_id", "task_id"],
-        )
+        # xcom_params = GaugeMetricFamily(
+        #     "airflow_xcom_parameter",
+        #     "Airflow Xcom Parameter",
+        #     labels=["dag_id", "task_id"],
+        # )
 
-        xcom_config = load_xcom_config()
-        for tasks in xcom_config.get("xcom_params", []):
-            for param in get_xcom_params(tasks["task_id"]):
-                xcom_value = extract_xcom_parameter(param.value)
+        # xcom_config = load_xcom_config()
+        # for tasks in xcom_config.get("xcom_params", []):
+        #     for param in get_xcom_params(tasks["task_id"]):
+        #         xcom_value = extract_xcom_parameter(param.value)
 
-                if tasks["key"] in xcom_value:
-                    xcom_params.add_metric(
-                        [param.dag_id, param.task_id], xcom_value[tasks["key"]]
-                    )
+        #         if tasks["key"] in xcom_value:
+        #             xcom_params.add_metric(
+        #                 [param.dag_id, param.task_id], xcom_value[tasks["key"]]
+        #             )
 
-        yield xcom_params
+        # yield xcom_params
 
-        task_scheduler_delay = GaugeMetricFamily(
-            "airflow_task_scheduler_delay",
-            "Airflow Task scheduling delay",
-            labels=["queue"],
-        )
+        # task_scheduler_delay = GaugeMetricFamily(
+        #     "airflow_task_scheduler_delay",
+        #     "Airflow Task scheduling delay",
+        #     labels=["queue"],
+        # )
 
-        for task in get_task_scheduler_delay():
-            task_scheduling_delay_value = (
-                task.start_date - task.queued_dttm
-            ).total_seconds()
-            task_scheduler_delay.add_metric(
-                [task.queue], task_scheduling_delay_value
-            )
-        yield task_scheduler_delay
+        # for task in get_task_scheduler_delay():
+        #     task_scheduling_delay_value = (
+        #         task.start_date - task.queued_dttm
+        #     ).total_seconds()
+        #     task_scheduler_delay.add_metric(
+        #         [task.queue], task_scheduling_delay_value
+        #     )
+        # yield task_scheduler_delay
 
-        num_queued_tasks_metric = GaugeMetricFamily(
-            "airflow_num_queued_tasks", "Airflow Number of Queued Tasks",
-        )
+        # num_queued_tasks_metric = GaugeMetricFamily(
+        #     "airflow_num_queued_tasks", "Airflow Number of Queued Tasks",
+        # )
 
-        num_queued_tasks = get_num_queued_tasks()
-        num_queued_tasks_metric.add_metric([], num_queued_tasks)
-        yield num_queued_tasks_metric
+        # num_queued_tasks = get_num_queued_tasks()
+        # num_queued_tasks_metric.add_metric([], num_queued_tasks)
+        # yield num_queued_tasks_metric
 
 
 REGISTRY.register(MetricsCollector())
