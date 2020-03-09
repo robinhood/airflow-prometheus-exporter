@@ -8,7 +8,7 @@ from setuptools import setup, find_packages
 with open("README.md", encoding="utf-8") as readme_file:
     readme = readme_file.read()
 
-install_requirements = (["prometheus_client>=0.4.2",],)
+install_requirements = (["croniter==0.3.31", "prometheus_client>=0.4.2"],)
 
 extras_require = {"dev": ["bumpversion", "tox", "twine",]}
 
