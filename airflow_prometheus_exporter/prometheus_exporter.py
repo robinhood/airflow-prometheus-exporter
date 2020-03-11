@@ -120,6 +120,10 @@ def get_dag_duration_info():
                     == dag_start_dt_query.c.execution_date,
                 ),
             )
+            .filter(
+                TaskInstance.start_date.isnot(None),
+                TaskInstance.end_date.isnot(None),
+            )
             .all()
         )
 
@@ -478,7 +482,6 @@ REGISTRY.register(MetricsCollector())
 
 if RBAC:
     from flask_appbuilder import BaseView as FABBaseView, expose as FABexpose
-
 
     class RBACMetrics(FABBaseView):
         route_base = "/admin/metrics/"
