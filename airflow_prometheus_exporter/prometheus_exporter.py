@@ -4,7 +4,7 @@ import pickle
 from contextlib import contextmanager
 
 from airflow.configuration import conf
-from airflow.models import DagModel, DagRun, TaskInstance, TaskFail, XCom
+from airflow.models import DagModel, DagRun, TaskInstance, TaskFail, XCom, DagTag
 from airflow.plugins_manager import AirflowPlugin
 from airflow.settings import RBAC, Session
 from airflow.utils.state import State
@@ -39,15 +39,18 @@ def get_dag_state_info():
     with session_scope(Session) as session:
         dag_status_query = (
             session.query(
+                DagTag.name,
                 DagRun.dag_id,
                 DagRun.state,
                 func.count(DagRun.state).label("count"),
-            )
-            .group_by(DagRun.dag_id, DagRun.state)
+            ).outerjoin(
+                DagTag,DagTag.dag_id == TaskInstance.dag_id
+            ).group_by(DagRun.dag_id, DagRun.state)
             .subquery()
         )
         return (
             session.query(
+                dag_status_query.c.name,
                 dag_status_query.c.dag_id,
                 dag_status_query.c.state,
                 dag_status_query.c.count,
@@ -138,18 +141,21 @@ def get_task_state_info():
     with session_scope(Session) as session:
         task_status_query = (
             session.query(
+                DagTag.name,
                 TaskInstance.dag_id,
                 TaskInstance.task_id,
                 TaskInstance.state,
                 func.count(TaskInstance.dag_id).label("value"),
-            )
-            .group_by(
+            ).outerjoin(
+                DagTag,DagTag.dag_id == TaskInstance.dag_id
+            ).group_by(
                 TaskInstance.dag_id, TaskInstance.task_id, TaskInstance.state
             )
             .subquery()
         )
         return (
             session.query(
+                task_status_query.c.name,
                 task_status_query.c.dag_id,
                 task_status_query.c.task_id,
                 task_status_query.c.state,
@@ -360,11 +366,11 @@ class MetricsCollector(object):
         t_state = GaugeMetricFamily(
             "airflow_task_status",
             "Shows the number of task instances with particular status",
-            labels=["dag_id", "task_id", "owner", "status"],
+            labels=["tag", "dag_id", "task_id", "owner", "status"],
         )
         for task in task_info:
             t_state.add_metric(
-                [task.dag_id, task.task_id, task.owners, task.state or "none"],
+                [task.name or "none", task.dag_id, task.task_id, task.owners, task.state or "none"],
                 task.value,
             )
         yield t_state
@@ -400,10 +406,10 @@ class MetricsCollector(object):
         d_state = GaugeMetricFamily(
             "airflow_dag_status",
             "Shows the number of dag starts with this status",
-            labels=["dag_id", "owner", "status"],
+            labels=["tag", "dag_id", "owner", "status"],
         )
         for dag in dag_info:
-            d_state.add_metric([dag.dag_id, dag.owners, dag.state], dag.count)
+            d_state.add_metric([dag.name, dag.dag_id, dag.owners, dag.state], dag.count)
         yield d_state
 
         dag_duration = GaugeMetricFamily(
