@@ -57,7 +57,7 @@ def get_dag_state_info():
             .outerjoin(
                 DagTag, DagTag.dag_id == DagRun.dag_id
             )
-            .group_by(DagRun.dag_id, DagRun.state)
+            .group_by(DagTag.name, DagRun.dag_id, DagRun.state)
             .subquery()
         )
         return (
@@ -167,7 +167,7 @@ def get_task_state_info():
                 DagTag, DagTag.dag_id == TaskInstance.dag_id
             )
             .group_by(
-                TaskInstance.dag_id, TaskInstance.task_id, TaskInstance.state,
+                DagTag.name, TaskInstance.dag_id, TaskInstance.task_id, TaskInstance.state,
             )
             .subquery()
         )
