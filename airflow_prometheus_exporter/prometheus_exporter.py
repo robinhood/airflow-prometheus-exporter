@@ -1,10 +1,12 @@
 """Prometheus exporter for Airflow."""
 import json
 import pickle
+import pendulum
+import os
 from contextlib import contextmanager
 
 from airflow.configuration import conf
-from airflow.models import DagModel, DagRun, TaskInstance, TaskFail, XCom
+from airflow.models import DagModel, DagRun, TaskInstance, TaskFail, XCom, DagTag
 from airflow.plugins_manager import AirflowPlugin
 from airflow.settings import RBAC, Session
 from airflow.utils.state import State
@@ -17,7 +19,10 @@ from sqlalchemy import and_, func
 
 from airflow_prometheus_exporter.xcom_config import load_xcom_config
 
+
 CANARY_DAG = "canary_dag"
+RETENTION_TIME = os.environ.get("PROMETHEUS_METRICS_DAYS", 14)
+TIMEZONE = conf.get("core", "default_timezone")
 
 
 @contextmanager
@@ -36,18 +41,28 @@ def session_scope(session):
 
 def get_dag_state_info():
     """Number of DAG Runs with particular state."""
+    min_date_to_filter = pendulum.now(TIMEZONE).subtract(days=RETENTION_TIME)
     with session_scope(Session) as session:
         dag_status_query = (
             session.query(
+                DagTag.name,
                 DagRun.dag_id,
                 DagRun.state,
                 func.count(DagRun.state).label("count"),
+            )
+            .filter(
+                DagRun.execution_date > min_date_to_filter,
+                DagRun.state.isnot(None)
+            )
+            .outerjoin(
+                DagTag, DagTag.dag_id == DagRun.dag_id
             )
             .group_by(DagRun.dag_id, DagRun.state)
             .subquery()
         )
         return (
             session.query(
+                dag_status_query.c.name,
                 dag_status_query.c.dag_id,
                 dag_status_query.c.state,
                 dag_status_query.c.count,
@@ -64,6 +79,7 @@ def get_dag_state_info():
 
 def get_dag_duration_info():
     """Duration of successful DAG Runs."""
+    min_date_to_filter = pendulum.now(TIMEZONE).subtract(days=RETENTION_TIME)
     with session_scope(Session) as session:
         max_execution_dt_query = (
             session.query(
@@ -76,6 +92,7 @@ def get_dag_duration_info():
                 DagModel.is_paused == False,
                 DagRun.state == State.SUCCESS,
                 DagRun.end_date.isnot(None),
+                DagRun.execution_date > min_date_to_filter
             )
             .group_by(DagRun.dag_id)
             .subquery()
@@ -99,6 +116,10 @@ def get_dag_duration_info():
                     ),
                 ),
             )
+            .filter(
+                TaskInstance.start_date.isnot(None),
+                TaskInstance.end_date.isnot(None),
+            )
             .group_by(
                 max_execution_dt_query.c.dag_id,
                 max_execution_dt_query.c.max_execution_dt,
@@ -120,10 +141,6 @@ def get_dag_duration_info():
                     == dag_start_dt_query.c.execution_date,
                 ),
             )
-            .filter(
-                TaskInstance.start_date.isnot(None),
-                TaskInstance.end_date.isnot(None),
-            )
             .all()
         )
 
@@ -135,21 +152,28 @@ def get_dag_duration_info():
 
 def get_task_state_info():
     """Number of task instances with particular state."""
+    min_date_to_filter = pendulum.now(TIMEZONE).subtract(days=RETENTION_TIME)
     with session_scope(Session) as session:
         task_status_query = (
             session.query(
+                DagTag.name,
                 TaskInstance.dag_id,
                 TaskInstance.task_id,
                 TaskInstance.state,
                 func.count(TaskInstance.dag_id).label("value"),
             )
+            .filter(TaskInstance.execution_date > min_date_to_filter)
+            .outerjoin(
+                DagTag, DagTag.dag_id == TaskInstance.dag_id
+            )
             .group_by(
-                TaskInstance.dag_id, TaskInstance.task_id, TaskInstance.state
+                TaskInstance.dag_id, TaskInstance.task_id, TaskInstance.state,
             )
             .subquery()
         )
         return (
             session.query(
+                task_status_query.c.name,
                 task_status_query.c.dag_id,
                 task_status_query.c.task_id,
                 task_status_query.c.state,
@@ -190,6 +214,9 @@ def get_xcom_params(task_id):
             session.query(
                 DagRun.dag_id,
                 func.max(DagRun.execution_date).label("max_execution_dt"),
+            )
+            .filter(
+                TaskInstance.state.isnot(None)
             )
             .group_by(DagRun.dag_id)
             .subquery()
@@ -360,11 +387,11 @@ class MetricsCollector(object):
         t_state = GaugeMetricFamily(
             "airflow_task_status",
             "Shows the number of task instances with particular status",
-            labels=["dag_id", "task_id", "owner", "status"],
+            labels=["tag", "dag_id", "task_id", "owner", "status"],
         )
         for task in task_info:
             t_state.add_metric(
-                [task.dag_id, task.task_id, task.owners, task.state or "none"],
+                [task.name or "none", task.dag_id, task.task_id, task.owners, task.state or "none"],
                 task.value,
             )
         yield t_state
@@ -379,7 +406,7 @@ class MetricsCollector(object):
                 task.end_date - task.start_date
             ).total_seconds()
             task_duration.add_metric(
-                [task.task_id, task.dag_id, str(task.execution_date.date())],
+                [task.task_id, task.dag_id, task.execution_date.strftime("%Y-%m-%dT%H:%M%S")],
                 task_duration_value,
             )
         yield task_duration
@@ -400,10 +427,10 @@ class MetricsCollector(object):
         d_state = GaugeMetricFamily(
             "airflow_dag_status",
             "Shows the number of dag starts with this status",
-            labels=["dag_id", "owner", "status"],
+            labels=["tag", "dag_id", "owner", "status"],
         )
         for dag in dag_info:
-            d_state.add_metric([dag.dag_id, dag.owners, dag.state], dag.count)
+            d_state.add_metric([dag.name or "none", dag.dag_id, dag.owners, dag.state], dag.count)
         yield d_state
 
         dag_duration = GaugeMetricFamily(
