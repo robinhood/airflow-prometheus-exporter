@@ -9,8 +9,8 @@ with open('README.md', encoding='utf-8') as readme_file:
     readme = readme_file.read()
 
 install_requirements = [
-    'apache-airflow>=1.10.4',
-    'prometheus_client>=0.4.2',
+    'prometheus_client==0.8.0',
+    'importlib_metadata==1.7.0',
 ],
 
 extras_require={
