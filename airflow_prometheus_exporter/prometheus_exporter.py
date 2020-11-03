@@ -42,6 +42,7 @@ def session_scope(session):
 def get_dag_state_info():
     """Number of DAG Runs with particular state."""
     min_date_to_filter = pendulum.now(TIMEZONE).subtract(days=RETENTION_TIME)
+    return "asdf"
     with session_scope(Session) as session:
         dag_status_query = (
             session.query(
