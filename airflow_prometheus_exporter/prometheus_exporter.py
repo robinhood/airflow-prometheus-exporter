@@ -200,7 +200,7 @@ def get_task_state_info():
             )
             .join(DagModel, DagModel.dag_id == task_status_query.c.dag_id)
             .filter(
-                #DagModel.is_active == True,  # noqa
+                DagModel.is_active == True,  # noqa
                 DagModel.is_paused == False,
             )
             .outerjoin(
