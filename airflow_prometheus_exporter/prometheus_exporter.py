@@ -493,8 +493,6 @@ class MetricsCollector(object):
                 dag.end_date - dag.start_date
             ).total_seconds()
             dag_duration.add_metric([dag.dag_id], dag_duration_value)
-
-
         yield dag_duration
 
         # Scheduler Metrics
