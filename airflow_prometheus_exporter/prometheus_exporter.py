@@ -34,6 +34,12 @@ def session_scope(session):
         session.close()
 
 
+with session_scope(Session) as session:
+    Base = declarative_base(session.get_bind())
+    class GapDagTag(Base):
+        __tablename__ = 'gap_dag_tag'
+        __table_args__ = {'autoload': True}
+
 ######################
 # DAG Related Metrics
 ######################
@@ -43,6 +49,7 @@ def get_dag_state_info():
     """Number of DAG Runs with particular state."""
     min_date_to_filter = pendulum.now(TIMEZONE).subtract(days=RETENTION_TIME)
     with session_scope(Session) as session:
+
         dag_status_query = (
             session.query(
                 DagTag.name,
@@ -67,12 +74,18 @@ def get_dag_state_info():
                 dag_status_query.c.state,
                 dag_status_query.c.count,
                 DagModel.owners,
+                GapDagTag.cadence,
+                GapDagTag.severerity,
+                GapDagTag.alert_target,
+                GapDagTag.instant_slack_alert,
+                GapDagTag.alert_classification,
             )
             .join(DagModel, DagModel.dag_id == dag_status_query.c.dag_id)
             .filter(
                 DagModel.is_active == True,  # noqa
                 DagModel.is_paused == False,
             )
+            .outerjoin(GapDagTag, GapDagTag.dag_id == dag_status_query.c.dag_id)
             .all()
         )
 
@@ -179,11 +192,22 @@ def get_task_state_info():
                 task_status_query.c.state,
                 task_status_query.c.value,
                 DagModel.owners,
+                GapDagTag.cadence,
+                GapDagTag.severerity,
+                GapDagTag.alert_target,
+                GapDagTag.instant_slack_alert,
+                GapDagTag.alert_classification,
             )
             .join(DagModel, DagModel.dag_id == task_status_query.c.dag_id)
             .filter(
                 DagModel.is_active == True,  # noqa
                 DagModel.is_paused == False,
+            )
+            .outerjoin(
+                GapDagTag,
+                (GapDagTag.dag_id == task_status_query.c.dag_id)
+                &
+                (GapDagTag.task_id == task_status_query.c.task_id),
             )
             .all()
         )
@@ -387,12 +411,24 @@ class MetricsCollector(object):
         t_state = GaugeMetricFamily(
             "airflow_task_status",
             "Shows the number of task instances with particular status",
-            labels=["tag", "dag_id", "task_id", "owner", "status"],
+            labels=["tag", "dag_id", "task_id", "owner", "status", "cadence", "severity",
+                "alert_target", "instant_slack_alert", "alert_classification"],
         )
         for task in task_info:
             t_state.add_metric(
-                [task.name or "none", task.dag_id, task.task_id, task.owners, task.state or "none"],
-                task.value,
+                [
+                    task.name or "none",
+                    task.dag_id,
+                    task.task_id,
+                    task.owners,
+                    task.state or "none",
+                    task.cadence or "none",
+                    task.severerity or "none",
+                    task.alert_target or "none",
+                    task.instant_slack_alert or "none",
+                    task.alert_classification or "none"
+                ],
+                task.value
             )
         yield t_state
 
@@ -427,10 +463,24 @@ class MetricsCollector(object):
         d_state = GaugeMetricFamily(
             "airflow_dag_status",
             "Shows the number of dag starts with this status",
-            labels=["tag", "dag_id", "owner", "status"],
+            labels=["tag", "dag_id", "owner", "status", "cadence", "severity",
+                "alert_target", "instant_slack_alert", "alert_classification"],
         )
         for dag in dag_info:
-            d_state.add_metric([dag.name or "none", dag.dag_id, dag.owners, dag.state], dag.count)
+            d_state.add_metric(
+                [
+                    dag.name or "none",
+                    dag.dag_id,
+                    dag.owners,
+                    dag.state,
+                    dag.cadence or "none",
+                    dag.severerity or "none",
+                    dag.alert_target or "none",
+                    dag.instant_slack_alert or "none",
+                    dag.alert_classification or "none"
+                ],
+                dag.count
+            )
         yield d_state
 
         dag_duration = GaugeMetricFamily(
