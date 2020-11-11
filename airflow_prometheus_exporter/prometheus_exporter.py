@@ -16,6 +16,7 @@ from flask_admin import BaseView, expose
 from prometheus_client import generate_latest, REGISTRY
 from prometheus_client.core import GaugeMetricFamily
 from sqlalchemy import and_, func
+from sqlalchemy.ext.declarative import declarative_base
 
 from airflow_prometheus_exporter.xcom_config import load_xcom_config
 
