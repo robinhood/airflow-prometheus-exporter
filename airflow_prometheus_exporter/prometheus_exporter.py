@@ -53,19 +53,14 @@ def get_dag_state_info():
 
         dag_status_query = (
             session.query(
-                DagTag.name,
-                DagRun.dag_id,
-                DagRun.state,
-                func.count(DagRun.state).label("count"),
+                DagRun.dag_id, DagRun.state, func.count(DagRun.state).label("count")
             )
             .filter(DagRun.external_trigger == False, DagRun.state.isnot(None))  # noqa
-            .outerjoin(DagTag, DagTag.dag_id == DagRun.dag_id)
-            .group_by(DagTag.name, DagRun.dag_id, DagRun.state)
+            .group_by(DagRun.dag_id, DagRun.state)
             .subquery()
         )
         return (
             session.query(
-                dag_status_query.c.name,
                 dag_status_query.c.dag_id,
                 dag_status_query.c.state,
                 dag_status_query.c.count,
@@ -158,24 +153,16 @@ def get_task_state_info():
     with session_scope(Session) as session:
         task_status_query = (
             session.query(
-                DagTag.name,
                 TaskInstance.dag_id,
                 TaskInstance.task_id,
                 TaskInstance.state,
                 func.count(TaskInstance.dag_id).label("value"),
             )
-            .outerjoin(DagTag, DagTag.dag_id == TaskInstance.dag_id)
-            .group_by(
-                DagTag.name,
-                TaskInstance.dag_id,
-                TaskInstance.task_id,
-                TaskInstance.state,
-            )
+            .group_by(TaskInstance.dag_id, TaskInstance.task_id, TaskInstance.state)
             .subquery()
         )
         return (
             session.query(
-                task_status_query.c.name,
                 task_status_query.c.dag_id,
                 task_status_query.c.task_id,
                 task_status_query.c.state,
