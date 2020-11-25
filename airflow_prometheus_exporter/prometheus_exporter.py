@@ -39,6 +39,7 @@ with session_scope(Session) as session:
 
     class GapDagTag(Base):
         __tablename__ = "gap_dag_tag"
+        dag_id = Column(String, primary_key=True)  # hack to have dag_id as PK
         __table_args__ = {"autoload": True}
 
 
