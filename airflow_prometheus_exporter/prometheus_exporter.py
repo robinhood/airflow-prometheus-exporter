@@ -400,7 +400,6 @@ class MetricsCollector(object):
             "airflow_task_status",
             "Shows the number of task instances with particular status",
             labels=[
-                "tag",
                 "dag_id",
                 "task_id",
                 "owner",
@@ -415,7 +414,6 @@ class MetricsCollector(object):
         for task in task_info:
             t_state.add_metric(
                 [
-                    task.name or "none",
                     task.dag_id,
                     task.task_id,
                     task.owners,
@@ -462,7 +460,6 @@ class MetricsCollector(object):
             "airflow_dag_status",
             "Shows the number of dag starts with this status",
             labels=[
-                "tag",
                 "dag_id",
                 "owner",
                 "status",
@@ -476,7 +473,6 @@ class MetricsCollector(object):
         for dag in dag_info:
             d_state.add_metric(
                 [
-                    dag.name or "none",
                     dag.dag_id,
                     dag.owners,
                     dag.state,
