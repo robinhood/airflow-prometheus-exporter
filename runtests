@@ -18,14 +18,18 @@ until $(curl --output /dev/null --silent --show-error --head --fail "${HEALTH_EN
 
     printf '.'
     ATTEMPT_COUNTER=$(($ATTEMPT_COUNTER+1))
+    docker logs airflow-prometheus-exporter
     sleep 10
 done
+
 
 echo "Retrieving metrics from ${METRICS_ENDPOINT}..."
 curl --silent --show-error --fail "${METRICS_ENDPOINT}"
 
 STATUSCODE=$(curl --silent --output /dev/stderr --write-out "%{http_code}" "${METRICS_ENDPOINT}")
 
+
+docker logs airflow-prometheus-exporter
 docker stop airflow-prometheus-exporter
 docker rm airflow-prometheus-exporter
 
@@ -33,4 +37,3 @@ if test $STATUSCODE -ne 200; then
     # error handling
     exit 1
 fi
-
