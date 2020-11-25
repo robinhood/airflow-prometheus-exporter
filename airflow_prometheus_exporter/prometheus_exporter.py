@@ -9,11 +9,11 @@ from flask import Response
 from flask_admin import BaseView, expose
 from prometheus_client import REGISTRY, generate_latest
 from prometheus_client.core import GaugeMetricFamily
-from sqlalchemy import and_, func, text
+from sqlalchemy import Column, String, and_, func
 from sqlalchemy.ext.declarative import declarative_base
 
 from airflow.configuration import conf
-from airflow.models import DagModel, DagRun, DagTag, TaskFail, TaskInstance, XCom
+from airflow.models import DagModel, DagRun, TaskFail, TaskInstance, XCom
 from airflow.plugins_manager import AirflowPlugin
 from airflow.settings import RBAC, Session
 from airflow.utils.log.logging_mixin import LoggingMixin
