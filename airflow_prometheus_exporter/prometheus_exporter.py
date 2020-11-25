@@ -9,7 +9,7 @@ from flask import Response
 from flask_admin import BaseView, expose
 from prometheus_client import REGISTRY, generate_latest
 from prometheus_client.core import GaugeMetricFamily
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, text
 from sqlalchemy.ext.declarative import declarative_base
 
 from airflow.configuration import conf
@@ -70,7 +70,6 @@ def get_dag_state_info():
                 GapDagTag.alert_target,
                 GapDagTag.instant_slack_alert,
                 GapDagTag.alert_classification,
-                GapDagTag.sla,
             )
             .join(DagModel, DagModel.dag_id == dag_status_query.c.dag_id)
             .filter(DagModel.is_active == True, DagModel.is_paused == False)  # noqa
@@ -173,7 +172,6 @@ def get_task_state_info():
                 GapDagTag.alert_target,
                 GapDagTag.instant_slack_alert,
                 GapDagTag.alert_classification,
-                GapDagTag.sla,
             )
             .join(DagModel, DagModel.dag_id == task_status_query.c.dag_id)
             .filter(DagModel.is_active == True, DagModel.is_paused == False)  # noqa
@@ -355,6 +353,38 @@ def get_num_queued_tasks():
         )
 
 
+def get_sla_miss_dags():
+    min_date_to_filter = pendulum.now(TIMEZONE).subtract(days=RETENTION_TIME)
+    with session_scope(Session) as session:
+        max_execution_dt_query = (
+            session.query(
+                DagRun.dag_id, func.max(DagRun.execution_date).label("max_execution_dt")
+            )
+            .join(DagModel, DagModel.dag_id == DagRun.dag_id)
+            .filter(
+                DagModel.is_active == True,  # noqa
+                DagModel.is_paused == False,
+                DagRun.state == State.SUCCESS,
+                DagRun.end_date.isnot(None),
+                DagRun.execution_date > min_date_to_filter,
+            )
+            .group_by(DagRun.dag_id)
+            .subquery()
+        )
+        return (
+            session.query(
+                GapDagTag.dag_id,
+                GapDagTag.sla_interval,
+                max_execution_dt_query.c.max_execution_dt,
+            )
+            .join(
+                max_execution_dt_query,
+                GapDagTag.dag_id == max_execution_dt_query.c.dag_id,
+            )
+            .filter(GapDagTag.task_id.is_(None), GapDagTag.sla_interval.isnot(None))
+        ).all()
+
+
 class MetricsCollector(object):
     """Metrics Collector for prometheus."""
 
@@ -379,7 +409,6 @@ class MetricsCollector(object):
                 "alert_target",
                 "instant_slack_alert",
                 "alert_classification",
-                "sla",
             ],
         )
         for task in task_info:
@@ -395,7 +424,6 @@ class MetricsCollector(object):
                     task.alert_target or "none",
                     task.instant_slack_alert or "none",
                     task.alert_classification or "none",
-                    task.sla or "none",
                 ],
                 task.value,
             )
@@ -442,7 +470,6 @@ class MetricsCollector(object):
                 "alert_target",
                 "instant_slack_alert",
                 "alert_classification",
-                "sla",
             ],
         )
         for dag in dag_info:
@@ -457,7 +484,6 @@ class MetricsCollector(object):
                     dag.alert_target or "none",
                     dag.instant_slack_alert or "none",
                     dag.alert_classification or "none",
-                    dag.sla or "none",
                 ],
                 dag.count,
             )
@@ -527,6 +553,18 @@ class MetricsCollector(object):
         num_queued_tasks = get_num_queued_tasks()
         num_queued_tasks_metric.add_metric([], num_queued_tasks)
         yield num_queued_tasks_metric
+
+        sla_miss_dags_metric = GaugeMetricFamily(
+            "airflow_dags_sla_miss", "Airflow DAGS missing the sla", labels=["dag_id"]
+        )
+
+        current_dt = pendulum.now(TIMEZONE)
+        for dag in get_sla_miss_dags():
+            if current_dt.diff(dag.max_execution_dt).in_hours() > dag.sla_interval:
+                sla_miss_dags_metric.add_metric([dag.dag_id], 1)
+            else:
+                sla_miss_dags_metric.add_metric([dag.dag_id], 0)
+        yield sla_miss_dags_metric
 
 
 REGISTRY.register(MetricsCollector())
