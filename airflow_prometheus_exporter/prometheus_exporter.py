@@ -51,12 +51,16 @@ with session_scope(Session) as session:
 def get_dag_state_info():
     """Number of DAG Runs with particular state."""
     with session_scope(Session) as session:
-
+        min_date_to_filter = pendulum.now(TIMEZONE).subtract(days=RETENTION_TIME)
         dag_status_query = (
             session.query(
                 DagRun.dag_id, DagRun.state, func.count(DagRun.state).label("count")
             )
-            .filter(DagRun.external_trigger == False, DagRun.state.isnot(None))  # noqa
+            .filter(
+                DagRun.execution_date > min_date_to_filter,
+                DagRun.external_trigger == False,
+                DagRun.state.isnot(None),
+            )  # noqa
             .group_by(DagRun.dag_id, DagRun.state)
             .subquery()
         )
@@ -150,6 +154,7 @@ def get_dag_duration_info():
 
 def get_task_state_info():
     """Number of task instances with particular state."""
+    min_date_to_filter = pendulum.now(TIMEZONE).subtract(days=RETENTION_TIME)
     with session_scope(Session) as session:
         task_status_query = (
             session.query(
@@ -159,6 +164,7 @@ def get_task_state_info():
                 func.count(TaskInstance.dag_id).label("value"),
             )
             .group_by(TaskInstance.dag_id, TaskInstance.task_id, TaskInstance.state)
+            .filter(TaskInstance.execution_date > min_date_to_filter)
             .subquery()
         )
         return (
