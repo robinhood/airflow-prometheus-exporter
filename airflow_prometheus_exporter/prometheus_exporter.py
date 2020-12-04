@@ -413,7 +413,7 @@ def get_sla_miss_tasks():
             session.query(
                 TaskInstance.dag_id,
                 TaskInstance.task_id,
-                max_execution_dt_query.c.max_execution_dt,
+                max_execution_dt_query.max_execution_dt,
                 GapDagTag.sla_interval,
             )
             .join(
