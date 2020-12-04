@@ -392,6 +392,52 @@ def get_sla_miss_dags():
         ).all()
 
 
+def get_sla_miss_tasks():
+    with session_scope(Session) as session:
+        max_execution_dt_query = (
+            session.query(
+                DagRun.dag_id, func.max(DagRun.execution_date).label("max_execution_dt")
+            )
+            .join(DagModel, DagModel.dag_id == DagRun.dag_id)
+            .filter(
+                DagModel.is_active == True,  # noqa
+                DagModel.is_paused == False,
+                DagRun.state == State.SUCCESS,
+                DagRun.end_date.isnot(None),
+            )
+            .group_by(DagRun.dag_id)
+            .subquery()
+        )
+
+        return (
+            session.query(
+                TaskInstance.dag_id,
+                TaskInstance.task_id,
+                max_execution_dt_query.c.max_execution_dt,
+                GapDagTag.sla_interval,
+            )
+            .join(
+                max_execution_dt_query,
+                and_(
+                    (TaskInstance.dag_id == max_execution_dt_query.c.dag_id),
+                    (
+                        TaskInstance.execution_date
+                        == max_execution_dt_query.c.max_execution_dt  # noqa
+                    ),
+                ),
+            )
+            .join(
+                GapDagTag,
+                and_(
+                    GapDagTag.dag_id == max_execution_dt_query.c.dag_id,
+                    GapDagTag.task_id == max_execution_dt_query.c.task_id,
+                ),
+            )
+            .filter(GapDagTag.task_id.is_(None), GapDagTag.sla_interval.isnot(None))
+            .all()
+        )
+
+
 class MetricsCollector(object):
     """Metrics Collector for prometheus."""
 
@@ -568,6 +614,20 @@ class MetricsCollector(object):
             else:
                 sla_miss_dags_metric.add_metric([dag.dag_id], 0)
         yield sla_miss_dags_metric
+
+        sla_miss_tasks_metric = GaugeMetricFamily(
+            "airflow_tasks_sla_miss",
+            "Airflow tasks missing the sla",
+            labels=["dag_id", "task_id"],
+        )
+
+        current_dt = pendulum.now(TIMEZONE)
+        for tasks in get_sla_miss_tasks():
+            if current_dt.diff(tasks.max_execution_dt).in_hours() > tasks.sla_interval:
+                sla_miss_tasks_metric.add_metric([tasks.dag_id, tasks.task_id], 1)
+            else:
+                sla_miss_tasks_metric.add_metric([tasks.dag_id, tasks.task_id], 0)
+        yield sla_miss_tasks_metric
 
 
 REGISTRY.register(MetricsCollector())
