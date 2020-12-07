@@ -437,6 +437,42 @@ def get_sla_miss_tasks():
             .all()
         )
 
+def get_sla_miss_tasks():
+    with session_scope(Session) as session:
+        max_execution_date_query = (
+            session.query(
+                TaskInstance.dag_id,
+                TaskInstance.task_id,
+                func.max(TaskInstance.execution_date).label("execution_date")
+            )
+            .join(DagModel, DagModel.dag_id == TaskInstance.dag_id)
+            .filter(
+                DagModel.is_active == True,
+                DagModel.is_paused == False,
+                TaskInstance.state == State.SUCCESS,
+                TaskInstance.end_date.isnot(None),
+            )
+            .group_by(TaskInstance.dag_id, TaskInstance.task_id)
+            .subquery()
+        )
+
+        return (
+            session.query(
+                GapDagTag.dag_id,
+                GapDagTag.task_id,
+                max_execution_date_query.c.execution_date,
+                GapDagTag.sla_interval,
+            )
+            .join(
+                max_execution_date_query,
+                and_(
+                    max_execution_date_query.c.dag_id == GapDagTag.dag_id,
+                    max_execution_date_query.c.task_id == GapDagTag.task_id
+                ),
+            )
+            .all()
+        )
+
 
 class MetricsCollector(object):
     """Metrics Collector for prometheus."""
@@ -621,9 +657,8 @@ class MetricsCollector(object):
             labels=["dag_id", "task_id"],
         )
 
-        current_dt = pendulum.now(TIMEZONE)
         for tasks in get_sla_miss_tasks():
-            if current_dt.diff(tasks.max_execution_dt).in_hours() > tasks.sla_interval:
+            if current_dt.diff(tasks.execution_date).in_hours() > tasks.sla_interval:
                 sla_miss_tasks_metric.add_metric([tasks.dag_id, tasks.task_id], 1)
             else:
                 sla_miss_tasks_metric.add_metric([tasks.dag_id, tasks.task_id], 0)
