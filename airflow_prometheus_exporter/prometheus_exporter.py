@@ -443,7 +443,7 @@ def get_sla_miss_tasks():
             session.query(
                 TaskInstance.dag_id,
                 TaskInstance.task_id,
-                func.max(TaskInstance.execution_date).label("execution_date")
+                func.max(TaskInstance.execution_date).label("max_execution_date")
             )
             .join(DagModel, DagModel.dag_id == TaskInstance.dag_id)
             .filter(
@@ -460,7 +460,7 @@ def get_sla_miss_tasks():
             session.query(
                 GapDagTag.dag_id,
                 GapDagTag.task_id,
-                max_execution_date_query.c.execution_date,
+                max_execution_date_query.c.max_execution_date,
                 GapDagTag.sla_interval,
             )
             .join(
@@ -658,7 +658,7 @@ class MetricsCollector(object):
         )
 
         for tasks in get_sla_miss_tasks():
-            if current_dt.diff(tasks.execution_date).in_hours() > tasks.sla_interval:
+            if current_dt.diff(tasks.max_execution_date).in_hours() > tasks.sla_interval:
                 sla_miss_tasks_metric.add_metric([tasks.dag_id, tasks.task_id], 1)
             else:
                 sla_miss_tasks_metric.add_metric([tasks.dag_id, tasks.task_id], 0)
