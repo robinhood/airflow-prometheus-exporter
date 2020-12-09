@@ -372,7 +372,6 @@ def get_sla_miss_dags():
                 DagModel.is_active == True,  # noqa
                 DagModel.is_paused == False,
                 DagRun.state == State.SUCCESS,
-                DagRun.end_date.isnot(None),
                 DagRun.execution_date > min_date_to_filter,
             )
             .group_by(DagRun.dag_id)
@@ -388,8 +387,47 @@ def get_sla_miss_dags():
                 max_execution_dt_query,
                 GapDagTag.dag_id == max_execution_dt_query.c.dag_id,
             )
-            .filter(GapDagTag.task_id.is_(None), GapDagTag.sla_interval.isnot(None))
-        ).all()
+            .filter(GapDagTag.sla_interval.isnot(None))
+            .all()
+        )
+
+def get_sla_miss_tasks():
+    min_date_to_filter = pendulum.now(TIMEZONE).subtract(days=RETENTION_TIME)
+    with session_scope(Session) as session:
+        max_execution_date_query = (
+            session.query(
+                TaskInstance.dag_id,
+                TaskInstance.task_id,
+                func.max(TaskInstance.execution_date).label("max_execution_date")
+            )
+            .join(DagModel, DagModel.dag_id == TaskInstance.dag_id)
+            .filter(
+                DagModel.is_active == True,
+                DagModel.is_paused == False,
+                TaskInstance.state == State.SUCCESS,
+                TaskInstance.execution_date > min_date_to_filter,
+            )
+            .group_by(TaskInstance.dag_id, TaskInstance.task_id)
+            .subquery()
+        )
+
+        return (
+            session.query(
+                GapDagTag.dag_id,
+                GapDagTag.task_id,
+                max_execution_date_query.c.max_execution_date,
+                GapDagTag.sla_interval,
+            )
+            .join(
+                max_execution_date_query,
+                and_(
+                    max_execution_date_query.c.dag_id == GapDagTag.dag_id,
+                    max_execution_date_query.c.task_id == GapDagTag.task_id
+                ),
+            )
+            .filter(GapDagTag.sla_interval.isnot(None))
+            .all()
+        )
 
 
 class MetricsCollector(object):
@@ -568,6 +606,19 @@ class MetricsCollector(object):
             else:
                 sla_miss_dags_metric.add_metric([dag.dag_id], 0)
         yield sla_miss_dags_metric
+
+        sla_miss_tasks_metric = GaugeMetricFamily(
+            "airflow_tasks_sla_miss",
+            "Airflow tasks missing the sla",
+            labels=["dag_id", "task_id"],
+        )
+
+        for tasks in get_sla_miss_tasks():
+            if current_dt.diff(tasks.max_execution_date).in_hours() > tasks.sla_interval:
+                sla_miss_tasks_metric.add_metric([tasks.dag_id, tasks.task_id], 1)
+            else:
+                sla_miss_tasks_metric.add_metric([tasks.dag_id, tasks.task_id], 0)
+        yield sla_miss_tasks_metric
 
 
 REGISTRY.register(MetricsCollector())
