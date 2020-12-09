@@ -388,55 +388,11 @@ def get_sla_miss_dags():
                 GapDagTag.dag_id == max_execution_dt_query.c.dag_id,
             )
             .filter(GapDagTag.sla_interval.isnot(None))
-        ).all()
-
-
-def get_sla_miss_tasks():
-    with session_scope(Session) as session:
-        max_execution_dt_query = (
-            session.query(
-                DagRun.dag_id, func.max(DagRun.execution_date).label("max_execution_dt")
-            )
-            .join(DagModel, DagModel.dag_id == DagRun.dag_id)
-            .filter(
-                DagModel.is_active == True,  # noqa
-                DagModel.is_paused == False,
-                DagRun.state == State.SUCCESS,
-                DagRun.end_date.isnot(None),
-            )
-            .group_by(DagRun.dag_id)
-            .subquery()
-        )
-
-        return (
-            session.query(
-                TaskInstance.dag_id,
-                TaskInstance.task_id,
-                TaskInstance.execution_date,
-                GapDagTag.sla_interval,
-            )
-            .join(
-                max_execution_dt_query,
-                and_(
-                    (TaskInstance.dag_id == max_execution_dt_query.c.dag_id),
-                    (
-                        TaskInstance.execution_date
-                        == max_execution_dt_query.c.max_execution_dt  # noqa
-                    ),
-                ),
-            )
-            .join(
-                GapDagTag,
-                and_(
-                    GapDagTag.dag_id == max_execution_dt_query.c.dag_id,
-                    GapDagTag.task_id == max_execution_dt_query.c.task_id,
-                ),
-            )
-            .filter(GapDagTag.task_id.is_(None), GapDagTag.sla_interval.isnot(None))
             .all()
         )
 
 def get_sla_miss_tasks():
+    min_date_to_filter = pendulum.now(TIMEZONE).subtract(days=RETENTION_TIME)
     with session_scope(Session) as session:
         max_execution_date_query = (
             session.query(
@@ -449,7 +405,7 @@ def get_sla_miss_tasks():
                 DagModel.is_active == True,
                 DagModel.is_paused == False,
                 TaskInstance.state == State.SUCCESS,
-                TaskInstance.end_date.isnot(None),
+                TaskInstance.execution_date > min_date_to_filter,
             )
             .group_by(TaskInstance.dag_id, TaskInstance.task_id)
             .subquery()
@@ -469,6 +425,7 @@ def get_sla_miss_tasks():
                     max_execution_date_query.c.task_id == GapDagTag.task_id
                 ),
             )
+            .filter(GapDagTag.sla_interval.isnot(None))
             .all()
         )
 
