@@ -372,7 +372,6 @@ def get_sla_miss_dags():
                 DagModel.is_active == True,  # noqa
                 DagModel.is_paused == False,
                 DagRun.state == State.SUCCESS,
-                DagRun.end_date.isnot(None),
                 DagRun.execution_date > min_date_to_filter,
             )
             .group_by(DagRun.dag_id)
@@ -388,7 +387,7 @@ def get_sla_miss_dags():
                 max_execution_dt_query,
                 GapDagTag.dag_id == max_execution_dt_query.c.dag_id,
             )
-            .filter(GapDagTag.task_id.is_(None), GapDagTag.sla_interval.isnot(None))
+            .filter(GapDagTag.sla_interval.isnot(None))
         ).all()
 
 
