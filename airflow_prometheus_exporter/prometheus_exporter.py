@@ -406,6 +406,7 @@ def get_sla_miss_tasks():
             session.query(
                 TaskInstance.dag_id,
                 TaskInstance.task_id,
+                DagModel.schedule_interval,
                 func.max(TaskInstance.execution_date).label("max_execution_date"),
             )
             .join(DagModel, DagModel.dag_id == TaskInstance.dag_id)
@@ -415,7 +416,9 @@ def get_sla_miss_tasks():
                 TaskInstance.state == State.SUCCESS,
                 TaskInstance.execution_date > min_date_to_filter,
             )
-            .group_by(TaskInstance.dag_id, TaskInstance.task_id)
+            .group_by(
+                TaskInstance.dag_id, TaskInstance.task_id, DagModel.schedule_interval
+            )
             .subquery()
         )
 
@@ -424,6 +427,7 @@ def get_sla_miss_tasks():
                 GapDagTag.dag_id,
                 GapDagTag.task_id,
                 max_execution_date_query.c.max_execution_date,
+                max_execution_date_query.c.schedule_interval,
                 GapDagTag.sla_interval,
                 GapDagTag.sla_time,
             )
