@@ -614,7 +614,9 @@ class MetricsCollector(object):
             diff_from_expected = pendulum.instance(
                 expected_last_run
             ) - pendulum.instance(dag.max_execution_date)
-            sla_time = dateparser.parse(dag.sla_time)
+            sla_time = dateparser.parse(
+                "today " + dag.sla_time, settings={"TIMEZONE": "America/Los_Angeles"}
+            )
             if (
                 pendulum.now("America/Los_Angeles") > sla_time
                 and diff_from_expected > dag.sla_interval
@@ -636,7 +638,9 @@ class MetricsCollector(object):
             diff_from_expected = pendulum.instance(
                 expected_last_run
             ) - pendulum.instance(tasks.max_execution_date)
-            sla_time = dateparser.parse(tasks.sla_time)
+            sla_time = dateparser.parse(
+                "today " + dag.sla_time, settings={"TIMEZONE": "America/Los_Angeles"}
+            )
             if (
                 pendulum.now("America/Los_Angeles") > sla_time
                 and diff_from_expected > tasks.sla_interval
