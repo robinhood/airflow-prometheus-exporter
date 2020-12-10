@@ -3,7 +3,10 @@ import json
 import os
 import pickle
 from contextlib import contextmanager
+from datetime import datetime
 
+import croniter
+import dateparser
 import pendulum
 from flask import Response
 from flask_admin import BaseView, expose
@@ -365,7 +368,9 @@ def get_sla_miss_dags():
     with session_scope(Session) as session:
         max_execution_dt_query = (
             session.query(
-                DagRun.dag_id, func.max(DagRun.execution_date).label("max_execution_dt")
+                DagRun.dag_id,
+                DagModel.schedule_interval,
+                func.max(DagRun.execution_date).label("max_execution_date"),
             )
             .join(DagModel, DagModel.dag_id == DagRun.dag_id)
             .filter(
@@ -374,22 +379,27 @@ def get_sla_miss_dags():
                 DagRun.state == State.SUCCESS,
                 DagRun.execution_date > min_date_to_filter,
             )
-            .group_by(DagRun.dag_id)
+            .group_by(DagRun.dag_id, DagModel.schedule_interval)
             .subquery()
         )
         return (
             session.query(
                 GapDagTag.dag_id,
                 GapDagTag.sla_interval,
-                max_execution_dt_query.c.max_execution_dt,
+                GapDagTag.sla_time,
+                GapDagTag.alert_target,
+                GapDagTag.alert_classification,
+                max_execution_dt_query.c.schedule_interval,
+                max_execution_dt_query.c.max_execution_date,
             )
             .join(
                 max_execution_dt_query,
                 GapDagTag.dag_id == max_execution_dt_query.c.dag_id,
             )
-            .filter(GapDagTag.sla_interval.isnot(None))
+            .filter(GapDagTag.sla_interval.isnot(None), GapDagTag.task_id.is_(None))
             .all()
         )
+
 
 def get_sla_miss_tasks():
     min_date_to_filter = pendulum.now(TIMEZONE).subtract(days=RETENTION_TIME)
@@ -398,7 +408,8 @@ def get_sla_miss_tasks():
             session.query(
                 TaskInstance.dag_id,
                 TaskInstance.task_id,
-                func.max(TaskInstance.execution_date).label("max_execution_date")
+                DagModel.schedule_interval,
+                func.max(TaskInstance.execution_date).label("max_execution_date"),
             )
             .join(DagModel, DagModel.dag_id == TaskInstance.dag_id)
             .filter(
@@ -407,7 +418,9 @@ def get_sla_miss_tasks():
                 TaskInstance.state == State.SUCCESS,
                 TaskInstance.execution_date > min_date_to_filter,
             )
-            .group_by(TaskInstance.dag_id, TaskInstance.task_id)
+            .group_by(
+                TaskInstance.dag_id, TaskInstance.task_id, DagModel.schedule_interval
+            )
             .subquery()
         )
 
@@ -416,13 +429,17 @@ def get_sla_miss_tasks():
                 GapDagTag.dag_id,
                 GapDagTag.task_id,
                 max_execution_date_query.c.max_execution_date,
+                max_execution_date_query.c.schedule_interval,
                 GapDagTag.sla_interval,
+                GapDagTag.sla_time,
+                GapDagTag.alert_target,
+                GapDagTag.alert_classification,
             )
             .join(
                 max_execution_date_query,
                 and_(
                     max_execution_date_query.c.dag_id == GapDagTag.dag_id,
-                    max_execution_date_query.c.task_id == GapDagTag.task_id
+                    max_execution_date_query.c.task_id == GapDagTag.task_id,
                 ),
             )
             .filter(GapDagTag.sla_interval.isnot(None))
@@ -596,28 +613,71 @@ class MetricsCollector(object):
         yield num_queued_tasks_metric
 
         sla_miss_dags_metric = GaugeMetricFamily(
-            "airflow_dags_sla_miss", "Airflow DAGS missing the sla", labels=["dag_id"]
+            "airflow_dags_sla_miss",
+            "Airflow DAGS missing the sla",
+            labels=["dag_id", "alert_target", "alert_classification"],
         )
 
-        current_dt = pendulum.now(TIMEZONE)
         for dag in get_sla_miss_dags():
-            if current_dt.diff(dag.max_execution_dt).in_hours() > dag.sla_interval:
-                sla_miss_dags_metric.add_metric([dag.dag_id], 1)
+            cron = croniter.croniter(dag.schedule_interval)
+            expected_last_run = cron.get_prev(datetime)
+            diff_from_expected = (
+                pendulum.instance(expected_last_run)
+                - pendulum.instance(dag.max_execution_date)
+            ).in_minutes()
+            sla_time = dateparser.parse(
+                "today " + dag.sla_time, settings={"TIMEZONE": "America/Los_Angeles"}
+            )
+            if pendulum.now("America/Los_Angeles") > sla_time and diff_from_expected > (
+                dag.sla_interval * 24 * 60
+            ):
+                sla_miss_dags_metric.add_metric(
+                    [dag.dag_id, dag.alert_target, dag.alert_classification], 1
+                )
             else:
-                sla_miss_dags_metric.add_metric([dag.dag_id], 0)
+                sla_miss_dags_metric.add_metric(
+                    [dag.dag_id, dag.alert_target, dag.alert_classification], 0
+                )
         yield sla_miss_dags_metric
 
         sla_miss_tasks_metric = GaugeMetricFamily(
             "airflow_tasks_sla_miss",
             "Airflow tasks missing the sla",
-            labels=["dag_id", "task_id"],
+            labels=["dag_id", "task_id", "alert_target", "alert_classification"],
         )
 
         for tasks in get_sla_miss_tasks():
-            if current_dt.diff(tasks.max_execution_date).in_hours() > tasks.sla_interval:
-                sla_miss_tasks_metric.add_metric([tasks.dag_id, tasks.task_id], 1)
+            cron = croniter.croniter(tasks.schedule_interval)
+            expected_last_run = cron.get_prev(datetime)
+            diff_from_expected = (
+                pendulum.instance(expected_last_run)
+                - pendulum.instance(tasks.max_execution_date)
+            ).in_minutes()
+            sla_time = dateparser.parse(
+                "today " + dag.sla_time, settings={"TIMEZONE": "America/Los_Angeles"}
+            )
+            if pendulum.now("America/Los_Angeles") > sla_time and diff_from_expected > (
+                tasks.sla_interval * 24 * 60
+            ):
+                sla_miss_tasks_metric.add_metric(
+                    [
+                        tasks.dag_id,
+                        tasks.task_id,
+                        tasks.alert_target,
+                        tasks.alert_classification,
+                    ],
+                    1,
+                )
             else:
-                sla_miss_tasks_metric.add_metric([tasks.dag_id, tasks.task_id], 0)
+                sla_miss_tasks_metric.add_metric(
+                    [
+                        tasks.dag_id,
+                        tasks.task_id,
+                        tasks.alert_target,
+                        tasks.alert_classification,
+                    ],
+                    0,
+                )
         yield sla_miss_tasks_metric
 
 
