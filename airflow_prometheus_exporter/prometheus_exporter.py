@@ -3,7 +3,10 @@ import json
 import os
 import pickle
 from contextlib import contextmanager
+from datetime import datetime
 
+import croniter
+import dateparser
 import pendulum
 from flask import Response
 from flask_admin import BaseView, expose
@@ -365,7 +368,9 @@ def get_sla_miss_dags():
     with session_scope(Session) as session:
         max_execution_dt_query = (
             session.query(
-                DagRun.dag_id, func.max(DagRun.execution_date).label("max_execution_dt")
+                DagRun.dag_id,
+                DagModel.schedule_interval,
+                func.max(DagRun.execution_date).label("max_execution_dt"),
             )
             .join(DagModel, DagModel.dag_id == DagRun.dag_id)
             .filter(
@@ -374,13 +379,14 @@ def get_sla_miss_dags():
                 DagRun.state == State.SUCCESS,
                 DagRun.execution_date > min_date_to_filter,
             )
-            .group_by(DagRun.dag_id)
+            .group_by(DagRun.dag_id, DagModel.schedule_interval)
             .subquery()
         )
         return (
             session.query(
                 GapDagTag.dag_id,
                 GapDagTag.sla_interval,
+                max_execution_dt_query.c.schedule_interval,
                 max_execution_dt_query.c.max_execution_dt,
             )
             .join(
@@ -391,6 +397,7 @@ def get_sla_miss_dags():
             .all()
         )
 
+
 def get_sla_miss_tasks():
     min_date_to_filter = pendulum.now(TIMEZONE).subtract(days=RETENTION_TIME)
     with session_scope(Session) as session:
@@ -398,7 +405,7 @@ def get_sla_miss_tasks():
             session.query(
                 TaskInstance.dag_id,
                 TaskInstance.task_id,
-                func.max(TaskInstance.execution_date).label("max_execution_date")
+                func.max(TaskInstance.execution_date).label("max_execution_date"),
             )
             .join(DagModel, DagModel.dag_id == TaskInstance.dag_id)
             .filter(
@@ -422,7 +429,7 @@ def get_sla_miss_tasks():
                 max_execution_date_query,
                 and_(
                     max_execution_date_query.c.dag_id == GapDagTag.dag_id,
-                    max_execution_date_query.c.task_id == GapDagTag.task_id
+                    max_execution_date_query.c.task_id == GapDagTag.task_id,
                 ),
             )
             .filter(GapDagTag.sla_interval.isnot(None))
@@ -599,9 +606,14 @@ class MetricsCollector(object):
             "airflow_dags_sla_miss", "Airflow DAGS missing the sla", labels=["dag_id"]
         )
 
-        current_dt = pendulum.now(TIMEZONE)
         for dag in get_sla_miss_dags():
-            if current_dt.diff(dag.max_execution_dt).in_hours() > dag.sla_interval:
+            cron = croniter.croniter(dag.schedule_interval)
+            expected_last_run = cron.get_prev(datetime)
+            diff_from_expected = pendulum.instance(
+                expected_last_run
+            ) - pendulum.instance(dag.max_execution_date)
+            sla_time = dateparser.parse(dag.sla_time)
+            if pendulum.now("PST") > sla_time and diff_from_expected > dag.sla_interval:
                 sla_miss_dags_metric.add_metric([dag.dag_id], 1)
             else:
                 sla_miss_dags_metric.add_metric([dag.dag_id], 0)
@@ -614,7 +626,16 @@ class MetricsCollector(object):
         )
 
         for tasks in get_sla_miss_tasks():
-            if current_dt.diff(tasks.max_execution_date).in_hours() > tasks.sla_interval:
+            cron = croniter.croniter(tasks.schedule_interval)
+            expected_last_run = cron.get_prev(datetime)
+            diff_from_expected = pendulum.instance(
+                expected_last_run
+            ) - pendulum.instance(tasks.max_execution_date)
+            sla_time = dateparser.parse(tasks.sla_time)
+            if (
+                pendulum.now("PST") > sla_time
+                and diff_from_expected > tasks.sla_interval
+            ):
                 sla_miss_tasks_metric.add_metric([tasks.dag_id, tasks.task_id], 1)
             else:
                 sla_miss_tasks_metric.add_metric([tasks.dag_id, tasks.task_id], 0)

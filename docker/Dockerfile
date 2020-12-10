@@ -17,11 +17,10 @@ COPY docker/airflow.sh ${AIRFLOW_USER_HOME}/airflow.sh
 RUN chmod +x ${AIRFLOW_USER_HOME}/airflow.sh
 
 WORKDIR /airflow-prometheus-exporter
-COPY setup.py /airflow-prometheus-exporter/
-COPY README.md /airflow-prometheus-exporter/
-RUN pip install -e .
 
 COPY . /airflow-prometheus-exporter
+RUN pip install -e .
+
 
 RUN chown -R airflow: ${AIRFLOW_USER_HOME}
 

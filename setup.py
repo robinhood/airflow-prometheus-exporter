@@ -11,8 +11,12 @@ with open("README.md", encoding="utf-8") as readme_file:
 install_requirements = (
     [
         "apache-airflow==1.10.12",
+        "croniter==0.3.36",
+        "dateparser==1.0.0",
         "prometheus_client==0.8.0",
+        "pendulum==1.4.4",
         "importlib_metadata==1.7.0",
+        "numpy==1.18.1",
         "marshmallow-sqlalchemy==0.23.1",
         "marshmallow==2.21.0",
     ],
