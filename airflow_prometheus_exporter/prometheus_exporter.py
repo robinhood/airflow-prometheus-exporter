@@ -387,6 +387,8 @@ def get_sla_miss_dags():
                 GapDagTag.dag_id,
                 GapDagTag.sla_interval,
                 GapDagTag.sla_time,
+                GapDagTag.alert_target,
+                GapDagTag.alert_classification,
                 max_execution_dt_query.c.schedule_interval,
                 max_execution_dt_query.c.max_execution_date,
             )
@@ -430,6 +432,8 @@ def get_sla_miss_tasks():
                 max_execution_date_query.c.schedule_interval,
                 GapDagTag.sla_interval,
                 GapDagTag.sla_time,
+                GapDagTag.alert_target,
+                GapDagTag.alert_classification,
             )
             .join(
                 max_execution_date_query,
@@ -609,7 +613,9 @@ class MetricsCollector(object):
         yield num_queued_tasks_metric
 
         sla_miss_dags_metric = GaugeMetricFamily(
-            "airflow_dags_sla_miss", "Airflow DAGS missing the sla", labels=["dag_id"]
+            "airflow_dags_sla_miss",
+            "Airflow DAGS missing the sla",
+            labels=["dag_id", "alert_target", "alert_classification"],
         )
 
         for dag in get_sla_miss_dags():
@@ -625,15 +631,19 @@ class MetricsCollector(object):
             if pendulum.now("America/Los_Angeles") > sla_time and diff_from_expected > (
                 dag.sla_interval * 24 * 60
             ):
-                sla_miss_dags_metric.add_metric([dag.dag_id], 1)
+                sla_miss_dags_metric.add_metric(
+                    [dag.dag_id, dag.alert_target, dag.alert_classification], 1
+                )
             else:
-                sla_miss_dags_metric.add_metric([dag.dag_id], 0)
+                sla_miss_dags_metric.add_metric(
+                    [dag.dag_id, dag.alert_target, dag.alert_classification], 0
+                )
         yield sla_miss_dags_metric
 
         sla_miss_tasks_metric = GaugeMetricFamily(
             "airflow_tasks_sla_miss",
             "Airflow tasks missing the sla",
-            labels=["dag_id", "task_id"],
+            labels=["dag_id", "task_id", "alert_target", "alert_classification"],
         )
 
         for tasks in get_sla_miss_tasks():
@@ -649,9 +659,25 @@ class MetricsCollector(object):
             if pendulum.now("America/Los_Angeles") > sla_time and diff_from_expected > (
                 tasks.sla_interval * 24 * 60
             ):
-                sla_miss_tasks_metric.add_metric([tasks.dag_id, tasks.task_id], 1)
+                sla_miss_tasks_metric.add_metric(
+                    [
+                        tasks.dag_id,
+                        tasks.task_id,
+                        tasks.alert_target,
+                        tasks.alert_classification,
+                    ],
+                    1,
+                )
             else:
-                sla_miss_tasks_metric.add_metric([tasks.dag_id, tasks.task_id], 0)
+                sla_miss_tasks_metric.add_metric(
+                    [
+                        tasks.dag_id,
+                        tasks.task_id,
+                        tasks.alert_target,
+                        tasks.alert_classification,
+                    ],
+                    0,
+                )
         yield sla_miss_tasks_metric
 
 
