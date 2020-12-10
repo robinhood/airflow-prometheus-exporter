@@ -611,15 +611,15 @@ class MetricsCollector(object):
         for dag in get_sla_miss_dags():
             cron = croniter.croniter(dag.schedule_interval)
             expected_last_run = cron.get_prev(datetime)
-            diff_from_expected = pendulum.instance(
-                expected_last_run
-            ) - pendulum.instance(dag.max_execution_date)
+            diff_from_expected = (
+                pendulum.instance(expected_last_run)
+                - pendulum.instance(dag.max_execution_date)
+            ).in_minutes()
             sla_time = dateparser.parse(
                 "today " + dag.sla_time, settings={"TIMEZONE": "America/Los_Angeles"}
             )
-            if (
-                pendulum.now("America/Los_Angeles") > sla_time
-                and diff_from_expected > dag.sla_interval
+            if pendulum.now("America/Los_Angeles") > sla_time and diff_from_expected > (
+                dag.sla_interval * 24 * 60
             ):
                 sla_miss_dags_metric.add_metric([dag.dag_id], 1)
             else:
@@ -635,15 +635,15 @@ class MetricsCollector(object):
         for tasks in get_sla_miss_tasks():
             cron = croniter.croniter(tasks.schedule_interval)
             expected_last_run = cron.get_prev(datetime)
-            diff_from_expected = pendulum.instance(
-                expected_last_run
-            ) - pendulum.instance(tasks.max_execution_date)
+            diff_from_expected = (
+                pendulum.instance(expected_last_run)
+                - pendulum.instance(tasks.max_execution_date).in_minutes()
+            )
             sla_time = dateparser.parse(
                 "today " + dag.sla_time, settings={"TIMEZONE": "America/Los_Angeles"}
             )
-            if (
-                pendulum.now("America/Los_Angeles") > sla_time
-                and diff_from_expected > tasks.sla_interval
+            if pendulum.now("America/Los_Angeles") > sla_time and diff_from_expected > (
+                tasks.sla_interval * 24 * 60
             ):
                 sla_miss_tasks_metric.add_metric([tasks.dag_id, tasks.task_id], 1)
             else:
