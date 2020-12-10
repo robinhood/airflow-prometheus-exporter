@@ -370,7 +370,7 @@ def get_sla_miss_dags():
             session.query(
                 DagRun.dag_id,
                 DagModel.schedule_interval,
-                func.max(DagRun.execution_date).label("max_execution_dt"),
+                func.max(DagRun.execution_date).label("max_execution_date"),
             )
             .join(DagModel, DagModel.dag_id == DagRun.dag_id)
             .filter(
@@ -387,7 +387,7 @@ def get_sla_miss_dags():
                 GapDagTag.dag_id,
                 GapDagTag.sla_interval,
                 max_execution_dt_query.c.schedule_interval,
-                max_execution_dt_query.c.max_execution_dt,
+                max_execution_dt_query.c.max_execution_date,
             )
             .join(
                 max_execution_dt_query,
