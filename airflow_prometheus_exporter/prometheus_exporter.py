@@ -641,8 +641,8 @@ class MetricsCollector(object):
             expected_last_run = cron.get_prev(datetime)
             diff_from_expected = (
                 pendulum.instance(expected_last_run)
-                - pendulum.instance(tasks.max_execution_date).in_minutes()
-            )
+                - pendulum.instance(tasks.max_execution_date)
+            ).in_minutes()
             sla_time = dateparser.parse(
                 "today " + dag.sla_time, settings={"TIMEZONE": "America/Los_Angeles"}
             )
