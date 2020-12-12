@@ -78,6 +78,7 @@ def get_dag_state_info():
                 GapDagTag.alert_target,
                 GapDagTag.instant_slack_alert,
                 GapDagTag.alert_classification,
+                GapDagTag.sla_time,
             )
             .join(DagModel, DagModel.dag_id == dag_status_query.c.dag_id)
             .filter(DagModel.is_active == True, DagModel.is_paused == False)  # noqa
@@ -182,6 +183,7 @@ def get_task_state_info():
                 GapDagTag.alert_target,
                 GapDagTag.instant_slack_alert,
                 GapDagTag.alert_classification,
+                GapDagTag.sla_time,
             )
             .join(DagModel, DagModel.dag_id == task_status_query.c.dag_id)
             .filter(DagModel.is_active == True, DagModel.is_paused == False)  # noqa
@@ -382,7 +384,7 @@ def get_sla_miss_dags():
             .group_by(DagRun.dag_id, DagModel.schedule_interval)
             .subquery()
         )
-        return (
+        dags = (
             session.query(
                 GapDagTag.dag_id,
                 GapDagTag.sla_interval,
@@ -399,6 +401,33 @@ def get_sla_miss_dags():
             .filter(GapDagTag.sla_interval.isnot(None), GapDagTag.task_id.is_(None))
             .all()
         )
+        sla_miss_dags_metrics = []
+        for dag in dags:
+            dag_metrics = {
+                "dag_id": dag.dag_id,
+                "alert_target": dag.alert_target,
+                "alert_classification": dag.alert_classification,
+                "sla_miss": 0,
+            }
+            try:
+                cron = croniter.croniter(dag.schedule_interval)
+                expected_last_run = cron.get_prev(datetime)
+                diff_from_expected = (
+                    pendulum.instance(expected_last_run)
+                    - pendulum.instance(dag.max_execution_date)
+                ).in_minutes()
+                sla_time = dateparser.parse(
+                    "today " + dag.sla_time,
+                    settings={"TIMEZONE": "America/Los_Angeles"},
+                )
+                if pendulum.now(
+                    "America/Los_Angeles"
+                ) > sla_time and diff_from_expected > (dag.sla_interval * 24 * 60):
+                    dag_metrics["sla_miss"] = 1
+            except:
+                pass
+            sla_miss_dags_metrics.append(dag_metrics)
+        return sla_miss_dags_metrics
 
 
 def get_sla_miss_tasks():
@@ -424,7 +453,7 @@ def get_sla_miss_tasks():
             .subquery()
         )
 
-        return (
+        tasks = (
             session.query(
                 GapDagTag.dag_id,
                 GapDagTag.task_id,
@@ -445,6 +474,34 @@ def get_sla_miss_tasks():
             .filter(GapDagTag.sla_interval.isnot(None))
             .all()
         )
+        sla_miss_tasks = []
+        for task in tasks:
+            task_metrics = {
+                "dag_id": task.dag_id,
+                "task_id": task.task_id,
+                "alert_target": task.alert_target,
+                "alert_classification": task.alert_classification,
+                "sla_miss": 0,
+            }
+            try:
+                cron = croniter.croniter(task.schedule_interval)
+                expected_last_run = cron.get_prev(datetime)
+                diff_from_expected = (
+                    pendulum.instance(expected_last_run)
+                    - pendulum.instance(dag.max_execution_date)
+                ).in_minutes()
+                sla_time = dateparser.parse(
+                    "today " + task.sla_time,
+                    settings={"TIMEZONE": "America/Los_Angeles"},
+                )
+                if pendulum.now(
+                    "America/Los_Angeles"
+                ) > sla_time and diff_from_expected > (task.sla_interval * 24 * 60):
+                    task["sla_miss"] = 1
+            except:
+                pass
+            sla_miss_tasks.append(task_metrics)
+        return sla_miss_tasks
 
 
 class MetricsCollector(object):
@@ -470,6 +527,7 @@ class MetricsCollector(object):
                 "alert_target",
                 "instant_slack_alert",
                 "alert_classification",
+                "sla_time",
             ],
         )
         for task in task_info:
@@ -484,6 +542,7 @@ class MetricsCollector(object):
                     task.alert_target or "none",
                     task.instant_slack_alert or "none",
                     task.alert_classification or "none",
+                    task.sla_time or "none",
                 ],
                 task.value,
             )
@@ -529,6 +588,7 @@ class MetricsCollector(object):
                 "alert_target",
                 "instant_slack_alert",
                 "alert_classification",
+                "sla_time",
             ],
         )
         for dag in dag_info:
@@ -542,6 +602,7 @@ class MetricsCollector(object):
                     dag.alert_target or "none",
                     dag.instant_slack_alert or "none",
                     dag.alert_classification or "none",
+                    dag.sla_time or "none",
                 ],
                 dag.count,
             )
@@ -619,25 +680,11 @@ class MetricsCollector(object):
         )
 
         for dag in get_sla_miss_dags():
-            cron = croniter.croniter(dag.schedule_interval)
-            expected_last_run = cron.get_prev(datetime)
-            diff_from_expected = (
-                pendulum.instance(expected_last_run)
-                - pendulum.instance(dag.max_execution_date)
-            ).in_minutes()
-            sla_time = dateparser.parse(
-                "today " + dag.sla_time, settings={"TIMEZONE": "America/Los_Angeles"}
+            sla_miss_dags_metric.add_metric(
+                [dag["dag_id"], dag["alert_target"], dag["alert_classification"]],
+                dag["sla_miss"],
             )
-            if pendulum.now("America/Los_Angeles") > sla_time and diff_from_expected > (
-                dag.sla_interval * 24 * 60
-            ):
-                sla_miss_dags_metric.add_metric(
-                    [dag.dag_id, dag.alert_target, dag.alert_classification], 1
-                )
-            else:
-                sla_miss_dags_metric.add_metric(
-                    [dag.dag_id, dag.alert_target, dag.alert_classification], 0
-                )
+
         yield sla_miss_dags_metric
 
         sla_miss_tasks_metric = GaugeMetricFamily(
@@ -647,37 +694,15 @@ class MetricsCollector(object):
         )
 
         for tasks in get_sla_miss_tasks():
-            cron = croniter.croniter(tasks.schedule_interval)
-            expected_last_run = cron.get_prev(datetime)
-            diff_from_expected = (
-                pendulum.instance(expected_last_run)
-                - pendulum.instance(tasks.max_execution_date)
-            ).in_minutes()
-            sla_time = dateparser.parse(
-                "today " + dag.sla_time, settings={"TIMEZONE": "America/Los_Angeles"}
+            sla_miss_tasks_metric.add_metric(
+                [
+                    tasks["dag_id"],
+                    tasks["task_id"],
+                    tasks["alert_target"],
+                    tasks["alert_classification"],
+                ],
+                tasks["sla_miss"],
             )
-            if pendulum.now("America/Los_Angeles") > sla_time and diff_from_expected > (
-                tasks.sla_interval * 24 * 60
-            ):
-                sla_miss_tasks_metric.add_metric(
-                    [
-                        tasks.dag_id,
-                        tasks.task_id,
-                        tasks.alert_target,
-                        tasks.alert_classification,
-                    ],
-                    1,
-                )
-            else:
-                sla_miss_tasks_metric.add_metric(
-                    [
-                        tasks.dag_id,
-                        tasks.task_id,
-                        tasks.alert_target,
-                        tasks.alert_classification,
-                    ],
-                    0,
-                )
         yield sla_miss_tasks_metric
 
 
