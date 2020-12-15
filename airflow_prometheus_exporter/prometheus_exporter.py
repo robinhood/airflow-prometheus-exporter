@@ -411,7 +411,7 @@ def get_sla_miss_dags():
                 "alert_classification": dag.alert_classification,
                 "sla_miss": 0,
             }
-            try:
+            if croniter.croniter.is_valid(dag.schedule_interval):
                 cron = croniter.croniter(dag.schedule_interval)
                 expected_last_run = cron.get_prev(datetime)
                 max_execution_date = dag.max_execution_date
@@ -427,7 +427,7 @@ def get_sla_miss_dags():
                         "TIMEZONE": "America/Los_Angeles",
                     },
                 )
-            except croniter.CroniterBadCronError:
+            else:
                 sla_time = dateparser.parse("today " + dag.sla_time)
                 expected_last_run = sla_time.replace(
                     hours=0, minutes=0, seconds=0, microsecond=0
@@ -503,7 +503,7 @@ def get_sla_miss_tasks():
                 "alert_classification": task.alert_classification,
                 "sla_miss": 0,
             }
-            try:
+            if croniter.croniter.is_valid(task.schedule_interval):
                 cron = croniter.croniter(task.schedule_interval)
                 expected_last_run = cron.get_prev(datetime)
                 diff_from_expected = (
@@ -517,7 +517,7 @@ def get_sla_miss_tasks():
                         "TIMEZONE": "America/Los_Angeles",
                     },
                 )
-            except croniter.CroniterBadCronError:
+            else:
                 sla_time = dateparser.parse("today " + task.sla_time)
                 expected_last_run = sla_time.replace(
                     hours=0, minutes=0, seconds=0, microsecond=0
