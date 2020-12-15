@@ -16,6 +16,7 @@ from sqlalchemy import Column, String, and_, func
 from sqlalchemy.ext.declarative import declarative_base
 
 from airflow.configuration import conf
+from airflow.jobs.base_job import BaseJob
 from airflow.models import DagModel, DagRun, TaskFail, TaskInstance, XCom
 from airflow.plugins_manager import AirflowPlugin
 from airflow.settings import RBAC, Session
@@ -370,18 +371,19 @@ def get_sla_miss_dags():
     with session_scope(Session) as session:
         max_execution_dt_query = (
             session.query(
-                DagRun.dag_id,
+                TaskInstance.dag_id,
                 DagModel.schedule_interval,
-                func.max(DagRun.execution_date).label("max_execution_date"),
+                func.max(TaskInstance.execution_date).label("max_execution_date"),
             )
-            .join(DagModel, DagModel.dag_id == DagRun.dag_id)
+            .join(DagModel, DagModel.dag_id == TaskInstance.dag_id)
+            .join(BaseJob, TaskInstance.job_id == BaseJob.id)
             .filter(
                 DagModel.is_active == True,  # noqa
                 DagModel.is_paused == False,
-                DagRun.state == State.SUCCESS,
-                DagRun.execution_date > min_date_to_filter,
+                BaseJob.state == State.SUCCESS,
+                TaskInstance.execution_date > min_date_to_filter,
             )
-            .group_by(DagRun.dag_id, DagModel.schedule_interval)
+            .group_by(TaskInstance.dag_id, DagModel.schedule_interval)
             .subquery()
         )
         dags = (
@@ -412,20 +414,37 @@ def get_sla_miss_dags():
             try:
                 cron = croniter.croniter(dag.schedule_interval)
                 expected_last_run = cron.get_prev(datetime)
+                max_execution_date = dag.max_execution_date
+
                 diff_from_expected = (
                     pendulum.instance(expected_last_run)
                     - pendulum.instance(dag.max_execution_date)
                 ).in_minutes()
                 sla_time = dateparser.parse(
                     "today " + dag.sla_time,
-                    settings={"TIMEZONE": "America/Los_Angeles"},
+                    settings={
+                        "RELATIVE_BASE": expected_last_run,
+                        "TIMEZONE": "America/Los_Angeles",
+                    },
                 )
-                if pendulum.now(
-                    "America/Los_Angeles"
-                ) > sla_time and diff_from_expected > (dag.sla_interval * 24 * 60):
-                    dag_metrics["sla_miss"] = 1
-            except:
-                pass
+            except croniter.CroniterBadCronError:
+                sla_time = dateparser.parse("today " + dag.sla_time)
+                expected_last_run = sla_time.replace(
+                    hours=0, minutes=0, seconds=0, microsecond=0
+                )
+                max_execution_date = dag.max_execution_date.replace(
+                    hours=0, minutes=0, seconds=0, microsecond=0
+                )
+                diff_from_expected = pendulum.instance(
+                    expected_last_run
+                ) - pendulum.instance(max_execution_date)
+
+            if pendulum.now("America/Los_Angeles") > sla_time and diff_from_expected > (
+                dag.sla_interval * 24 * 60
+            ):
+                dag_metrics["sla_miss"] = 1
+            elif diff_from_expected > ((dag.sla_interval + 1) * 24 * 60):
+                dag_metrics["sla_miss"] = 1
             sla_miss_dags_metrics.append(dag_metrics)
         return sla_miss_dags_metrics
 
@@ -441,10 +460,11 @@ def get_sla_miss_tasks():
                 func.max(TaskInstance.execution_date).label("max_execution_date"),
             )
             .join(DagModel, DagModel.dag_id == TaskInstance.dag_id)
+            .join(BaseJob, TaskInstance.job_id == BaseJob.id)
             .filter(
                 DagModel.is_active == True,
                 DagModel.is_paused == False,
-                TaskInstance.state == State.SUCCESS,
+                BaseJob.state == State.SUCCESS,
                 TaskInstance.execution_date > min_date_to_filter,
             )
             .group_by(
@@ -488,18 +508,33 @@ def get_sla_miss_tasks():
                 expected_last_run = cron.get_prev(datetime)
                 diff_from_expected = (
                     pendulum.instance(expected_last_run)
-                    - pendulum.instance(dag.max_execution_date)
+                    - pendulum.instance(task.max_execution_date)
                 ).in_minutes()
                 sla_time = dateparser.parse(
                     "today " + task.sla_time,
-                    settings={"TIMEZONE": "America/Los_Angeles"},
+                    settings={
+                        "RELATIVE_BASE": expected_last_run,
+                        "TIMEZONE": "America/Los_Angeles",
+                    },
                 )
-                if pendulum.now(
-                    "America/Los_Angeles"
-                ) > sla_time and diff_from_expected > (task.sla_interval * 24 * 60):
-                    task["sla_miss"] = 1
-            except:
-                pass
+            except croniter.CroniterBadCronError:
+                sla_time = dateparser.parse("today " + task.sla_time)
+                expected_last_run = sla_time.replace(
+                    hours=0, minutes=0, seconds=0, microsecond=0
+                )
+                max_execution_date = task.max_execution_date.replace(
+                    hours=0, minutes=0, seconds=0, microsecond=0
+                )
+                diff_from_expected = pendulum.instance(
+                    expected_last_run
+                ) - pendulum.instance(max_execution_date)
+
+            if pendulum.now("America/Los_Angeles") > sla_time and diff_from_expected > (
+                task.sla_interval * 24 * 60
+            ):
+                task["sla_miss"] = 1
+            elif diff_from_expected > ((task.sla_interval + 1) * 24 * 60):
+                task["sla_miss"] = 1
             sla_miss_tasks.append(task_metrics)
         return sla_miss_tasks
 
