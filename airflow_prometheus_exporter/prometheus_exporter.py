@@ -42,7 +42,7 @@ with session_scope(Session) as session:
     Base = declarative_base(session.get_bind())
 
     class DelayAlertMetaData(Base):
-        __tablename__ = "gap_dag_tag"
+        __tablename__ = "delay_alert_metadata"
         dag_id = Column(String, primary_key=True)  # hack to have dag_id as PK
         task_id = Column(String)
         cadence = Column(String)
