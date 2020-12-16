@@ -41,19 +41,18 @@ def session_scope(session):
 with session_scope(Session) as session:
     Base = declarative_base(session.get_bind())
 
-    class GapDagTag(Base):
+    class DelayAlertMetaData(Base):
         __tablename__ = "gap_dag_tag"
         dag_id = Column(String, primary_key=True)  # hack to have dag_id as PK
         task_id = Column(String)
         cadence = Column(String)
-        severerity = Column(String)
+        severity = Column(String)
         alert_target = Column(String)
-        instant_slack_alert = Column(String)
-        alert_classification = Column(String)
+        alert_external_classification = Column(String)
+        alert_report_classification = Column(String)
         sla_interval = Column(Float)
         sla_time = Column(String)
         latest_successful_run = Column(UtcDateTime)
-        # __table_args__ = {"autoload": True}
 
 
 ######################
@@ -83,17 +82,20 @@ def get_dag_state_info():
                 dag_status_query.c.state,
                 dag_status_query.c.count,
                 DagModel.owners,
-                GapDagTag.cadence,
-                GapDagTag.severerity,
-                GapDagTag.alert_target,
-                GapDagTag.instant_slack_alert,
-                GapDagTag.alert_classification,
-                GapDagTag.sla_time,
+                DelayAlertMetaData.cadence,
+                DelayAlertMetaData.severity,
+                DelayAlertMetaData.alert_target,
+                DelayAlertMetaData.alert_external_classification,
+                DelayAlertMetaData.alert_report_classification,
+                DelayAlertMetaData.sla_time,
             )
             .join(DagModel, DagModel.dag_id == dag_status_query.c.dag_id)
             .filter(DagModel.is_active == True, DagModel.is_paused == False)  # noqa
-            .outerjoin(GapDagTag, GapDagTag.dag_id == dag_status_query.c.dag_id)
-            .filter(GapDagTag.task_id.is_(None))
+            .outerjoin(
+                DelayAlertMetaData,
+                DelayAlertMetaData.dag_id == dag_status_query.c.dag_id,
+            )
+            .filter(DelayAlertMetaData.task_id.is_(None))
             .all()
         )
 
@@ -188,21 +190,21 @@ def get_task_state_info():
                 task_status_query.c.state,
                 task_status_query.c.value,
                 DagModel.owners,
-                GapDagTag.cadence,
-                GapDagTag.severerity,
-                GapDagTag.alert_target,
-                GapDagTag.instant_slack_alert,
-                GapDagTag.alert_classification,
-                GapDagTag.sla_time,
+                DelayAlertMetaData.cadence,
+                DelayAlertMetaData.severity,
+                DelayAlertMetaData.alert_target,
+                DelayAlertMetaData.alert_external_classification,
+                DelayAlertMetaData.alert_report_classification,
+                DelayAlertMetaData.sla_time,
             )
             .join(DagModel, DagModel.dag_id == task_status_query.c.dag_id)
             .filter(DagModel.is_active == True, DagModel.is_paused == False)  # noqa
             .outerjoin(
-                GapDagTag,
-                (GapDagTag.dag_id == task_status_query.c.dag_id)
-                & (GapDagTag.task_id == task_status_query.c.task_id),  # noqa
+                DelayAlertMetaData,
+                (DelayAlertMetaData.dag_id == task_status_query.c.dag_id)
+                & (DelayAlertMetaData.task_id == task_status_query.c.task_id),  # noqa
             )
-            .filter(GapDagTag.task_id.isnot(None))
+            .filter(DelayAlertMetaData.task_id.isnot(None))
             .all()
         )
 
@@ -396,20 +398,24 @@ def get_sla_miss_dags():
         )
         dags = (
             session.query(
-                GapDagTag.dag_id,
-                GapDagTag.sla_interval,
-                GapDagTag.sla_time,
-                GapDagTag.alert_target,
-                GapDagTag.alert_classification,
-                GapDagTag.latest_successful_run,
+                DelayAlertMetaData.dag_id,
+                DelayAlertMetaData.sla_interval,
+                DelayAlertMetaData.sla_time,
+                DelayAlertMetaData.alert_target,
+                DelayAlertMetaData.alert_external_classification,
+                DelayAlertMetaData.alert_report_classification,
+                DelayAlertMetaData.latest_successful_run,
                 max_execution_dt_query.c.schedule_interval,
                 max_execution_dt_query.c.max_execution_date,
             )
             .join(
                 max_execution_dt_query,
-                GapDagTag.dag_id == max_execution_dt_query.c.dag_id,
+                DelayAlertMetaData.dag_id == max_execution_dt_query.c.dag_id,
             )
-            .filter(GapDagTag.sla_interval.isnot(None), GapDagTag.task_id.is_(None))
+            .filter(
+                DelayAlertMetaData.sla_interval.isnot(None),
+                DelayAlertMetaData.task_id.is_(None),
+            )
             .all()
         )
         sla_miss_dags_metrics = []
@@ -417,7 +423,8 @@ def get_sla_miss_dags():
             dag_metrics = {
                 "dag_id": dag.dag_id,
                 "alert_target": dag.alert_target,
-                "alert_classification": dag.alert_classification,
+                "alert_external_classification": dag.alert_external_classification,
+                "alert_report_classification": dag.alert_report_classification,
                 "sla_miss": 0,
             }
             max_execution_date = dag.max_execution_date
@@ -425,14 +432,15 @@ def get_sla_miss_dags():
                 dag.latest_successful_run is None
                 or max_execution_date > dag.latest_successful_run
             ):
-                session.query(GapDagTag).filter(GapDagTag.dag_id == dag.dag_id).update(
-                    {GapDagTag.latest_successful_run: max_execution_date}
-                )
+                session.query(DelayAlertMetaData).filter(
+                    DelayAlertMetaData.dag_id == dag.dag_id
+                ).update({DelayAlertMetaData.latest_successful_run: max_execution_date})
                 session.commit()
             else:
                 max_execution_date = dag.latest_successful_run
 
-            if croniter.croniter.is_valid(dag.schedule_interval):
+            cron_time = dag.schedule_interval
+            if isinstance(cron_time, str) and croniter.croniter.is_valid(cron_time):
                 cron = croniter.croniter(dag.schedule_interval)
                 expected_last_run = cron.get_prev(datetime)
 
@@ -494,24 +502,25 @@ def get_sla_miss_tasks():
 
         tasks = (
             session.query(
-                GapDagTag.dag_id,
-                GapDagTag.task_id,
+                DelayAlertMetaData.dag_id,
+                DelayAlertMetaData.task_id,
                 max_execution_date_query.c.max_execution_date,
                 max_execution_date_query.c.schedule_interval,
-                GapDagTag.sla_interval,
-                GapDagTag.sla_time,
-                GapDagTag.alert_target,
-                GapDagTag.alert_classification,
-                GapDagTag.latest_successful_run,
+                DelayAlertMetaData.sla_interval,
+                DelayAlertMetaData.sla_time,
+                DelayAlertMetaData.alert_target,
+                DelayAlertMetaData.alert_external_classification,
+                DelayAlertMetaData.alert_report_classification,
+                DelayAlertMetaData.latest_successful_run,
             )
             .join(
                 max_execution_date_query,
                 and_(
-                    max_execution_date_query.c.dag_id == GapDagTag.dag_id,
-                    max_execution_date_query.c.task_id == GapDagTag.task_id,
+                    max_execution_date_query.c.dag_id == DelayAlertMetaData.dag_id,
+                    max_execution_date_query.c.task_id == DelayAlertMetaData.task_id,
                 ),
             )
-            .filter(GapDagTag.sla_interval.isnot(None))
+            .filter(DelayAlertMetaData.sla_interval.isnot(None))
             .all()
         )
         sla_miss_tasks = []
@@ -520,7 +529,8 @@ def get_sla_miss_tasks():
                 "dag_id": task.dag_id,
                 "task_id": task.task_id,
                 "alert_target": task.alert_target,
-                "alert_classification": task.alert_classification,
+                "alert_external_classification": task.alert_external_classification,
+                "alert_report_classification": task.alert_report_classification,
                 "sla_miss": 0,
             }
             max_execution_date = task.max_execution_date
@@ -528,14 +538,16 @@ def get_sla_miss_tasks():
                 task.latest_successful_run is None
                 or max_execution_date > task.latest_successful_run
             ):
-                session.query(GapDagTag).filter(
-                    GapDagTag.dag_id == task.dag_id, GapDagTag.task_id == task.task_id
-                ).update({GapDagTag.latest_successful_run: max_execution_date})
+                session.query(DelayAlertMetaData).filter(
+                    DelayAlertMetaData.dag_id == task.dag_id,
+                    DelayAlertMetaData.task_id == task.task_id,
+                ).update({DelayAlertMetaData.latest_successful_run: max_execution_date})
                 session.commit()
             else:
                 max_execution_date = task.latest_successful_run
 
-            if croniter.croniter.is_valid(task.schedule_interval):
+            cron_time = task.schedule_interval
+            if isinstance(cron_time, str) and croniter.croniter.is_valid(cron_time):
                 cron = croniter.croniter(task.schedule_interval)
                 expected_last_run = cron.get_prev(datetime)
                 diff_from_expected = (
@@ -592,8 +604,8 @@ class MetricsCollector(object):
                 "cadence",
                 "severity",
                 "alert_target",
-                "instant_slack_alert",
-                "alert_classification",
+                "alert_external_classification",
+                "alert_report_classification",
                 "sla_time",
             ],
         )
@@ -605,10 +617,10 @@ class MetricsCollector(object):
                     task.owners,
                     task.state or "none",
                     task.cadence or "none",
-                    task.severerity or "none",
+                    task.severity or "none",
                     task.alert_target or "none",
-                    task.instant_slack_alert or "none",
-                    task.alert_classification or "none",
+                    task.alert_external_classification or "none",
+                    task.alert_report_classification or "none",
                     task.sla_time or "none",
                 ],
                 task.value,
@@ -653,9 +665,8 @@ class MetricsCollector(object):
                 "cadence",
                 "severity",
                 "alert_target",
-                "instant_slack_alert",
-                "alert_classification",
-                "sla_time",
+                "alert_external_classification",
+                "alert_report_classification" "sla_time",
             ],
         )
         for dag in dag_info:
@@ -665,10 +676,10 @@ class MetricsCollector(object):
                     dag.owners,
                     dag.state,
                     dag.cadence or "none",
-                    dag.severerity or "none",
+                    dag.severity or "none",
                     dag.alert_target or "none",
-                    dag.instant_slack_alert or "none",
-                    dag.alert_classification or "none",
+                    dag.alert_external_classification or "none",
+                    dag.alert_report_classification or "none",
                     dag.sla_time or "none",
                 ],
                 dag.count,
@@ -743,12 +754,22 @@ class MetricsCollector(object):
         sla_miss_dags_metric = GaugeMetricFamily(
             "airflow_dags_sla_miss",
             "Airflow DAGS missing the sla",
-            labels=["dag_id", "alert_target", "alert_classification"],
+            labels=[
+                "dag_id",
+                "alert_target",
+                "alert_external_classification",
+                "alert_report_classification",
+            ],
         )
 
         for dag in get_sla_miss_dags():
             sla_miss_dags_metric.add_metric(
-                [dag["dag_id"], dag["alert_target"], dag["alert_classification"]],
+                [
+                    dag["dag_id"],
+                    dag["alert_target"],
+                    dag["alert_external_classification"],
+                    dag["alert_report_classification"],
+                ],
                 dag["sla_miss"],
             )
 
@@ -757,7 +778,13 @@ class MetricsCollector(object):
         sla_miss_tasks_metric = GaugeMetricFamily(
             "airflow_tasks_sla_miss",
             "Airflow tasks missing the sla",
-            labels=["dag_id", "task_id", "alert_target", "alert_classification"],
+            labels=[
+                "dag_id",
+                "task_id",
+                "alert_target",
+                "alert_external_classification",
+                "alert_report_classification",
+            ],
         )
 
         for tasks in get_sla_miss_tasks():
@@ -766,7 +793,8 @@ class MetricsCollector(object):
                     tasks["dag_id"],
                     tasks["task_id"],
                     tasks["alert_target"],
-                    tasks["alert_classification"],
+                    tasks["alert_external_classification"],
+                    tasks["alert_report_classification"],
                 ],
                 tasks["sla_miss"],
             )
