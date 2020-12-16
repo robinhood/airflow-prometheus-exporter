@@ -18,6 +18,9 @@ RUN chmod +x ${AIRFLOW_USER_HOME}/airflow.sh
 
 WORKDIR /airflow-prometheus-exporter
 
+COPY requirements.txt /airflow-prometheus-exporter
+RUN pip install -r requirements.txt
+
 COPY . /airflow-prometheus-exporter
 RUN pip install -e .
 

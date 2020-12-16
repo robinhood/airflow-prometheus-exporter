@@ -371,19 +371,18 @@ def get_sla_miss_dags():
     with session_scope(Session) as session:
         max_execution_dt_query = (
             session.query(
-                TaskInstance.dag_id,
+                DagRun.dag_id,
                 DagModel.schedule_interval,
-                func.max(TaskInstance.execution_date).label("max_execution_date"),
+                func.max(DagRun.execution_date).label("max_execution_date"),
             )
-            .join(DagModel, DagModel.dag_id == TaskInstance.dag_id)
-            .join(BaseJob, TaskInstance.job_id == BaseJob.id)
+            .join(DagModel, DagModel.dag_id == DagRun.dag_id)
             .filter(
                 DagModel.is_active == True,  # noqa
                 DagModel.is_paused == False,
-                BaseJob.state == State.SUCCESS,
-                TaskInstance.execution_date > min_date_to_filter,
+                DagRun.state == State.SUCCESS,
+                DagRun.execution_date > min_date_to_filter,
             )
-            .group_by(TaskInstance.dag_id, DagModel.schedule_interval)
+            .group_by(DagRun.dag_id, DagModel.schedule_interval)
             .subquery()
         )
         dags = (
@@ -393,6 +392,7 @@ def get_sla_miss_dags():
                 GapDagTag.sla_time,
                 GapDagTag.alert_target,
                 GapDagTag.alert_classification,
+                GapDagTag.latest_successful_run,
                 max_execution_dt_query.c.schedule_interval,
                 max_execution_dt_query.c.max_execution_date,
             )
@@ -411,14 +411,22 @@ def get_sla_miss_dags():
                 "alert_classification": dag.alert_classification,
                 "sla_miss": 0,
             }
+            max_execution_date = dag.max_execution_date
+            if (
+                dag.latest_successful_run is None
+                or max_execution_date > dag.latest_successful_run
+            ):
+                dag.latest_successful_run = max_execution_date
+            else:
+                max_execution_date = dag.latest_successful_run
+
             if croniter.croniter.is_valid(dag.schedule_interval):
                 cron = croniter.croniter(dag.schedule_interval)
                 expected_last_run = cron.get_prev(datetime)
-                max_execution_date = dag.max_execution_date
 
                 diff_from_expected = (
                     pendulum.instance(expected_last_run)
-                    - pendulum.instance(dag.max_execution_date)
+                    - pendulum.instance(max_execution_date)
                 ).in_minutes()
                 sla_time = dateparser.parse(
                     "today " + dag.sla_time,
@@ -432,7 +440,7 @@ def get_sla_miss_dags():
                 expected_last_run = sla_time.replace(
                     hours=0, minutes=0, seconds=0, microsecond=0
                 )
-                max_execution_date = dag.max_execution_date.replace(
+                max_execution_date = max_execution_date.replace(
                     hours=0, minutes=0, seconds=0, microsecond=0
                 )
                 diff_from_expected = pendulum.instance(
