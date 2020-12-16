@@ -423,8 +423,10 @@ def get_sla_miss_dags():
             dag_metrics = {
                 "dag_id": dag.dag_id,
                 "alert_target": dag.alert_target,
-                "alert_external_classification": dag.alert_external_classification,
-                "alert_report_classification": dag.alert_report_classification,
+                "alert_external_classification": dag.alert_external_classification
+                or "missing",
+                "alert_report_classification": dag.alert_report_classification
+                or "missing",
                 "sla_miss": 0,
             }
             max_execution_date = dag.max_execution_date
@@ -528,9 +530,11 @@ def get_sla_miss_tasks():
             task_metrics = {
                 "dag_id": task.dag_id,
                 "task_id": task.task_id,
-                "alert_target": task.alert_target,
-                "alert_external_classification": task.alert_external_classification,
-                "alert_report_classification": task.alert_report_classification,
+                "alert_target": task.alert_target or "missing",
+                "alert_external_classification": task.alert_external_classification
+                or "missing",
+                "alert_report_classification": task.alert_report_classification
+                or "missing",
                 "sla_miss": 0,
             }
             max_execution_date = task.max_execution_date
@@ -615,13 +619,13 @@ class MetricsCollector(object):
                     task.dag_id,
                     task.task_id,
                     task.owners,
-                    task.state or "none",
-                    task.cadence or "none",
-                    task.severity or "none",
-                    task.alert_target or "none",
-                    task.alert_external_classification or "none",
-                    task.alert_report_classification or "none",
-                    task.sla_time or "none",
+                    task.state or "missing",
+                    task.cadence or "missing",
+                    task.severity or "missing",
+                    task.alert_target or "missing",
+                    task.alert_external_classification or "missing",
+                    task.alert_report_classification or "missing",
+                    task.sla_time or "missing",
                 ],
                 task.value,
             )
@@ -675,12 +679,12 @@ class MetricsCollector(object):
                     dag.dag_id,
                     dag.owners,
                     dag.state,
-                    dag.cadence or "none",
-                    dag.severity or "none",
-                    dag.alert_target or "none",
-                    dag.alert_external_classification or "none",
-                    dag.alert_report_classification or "none",
-                    dag.sla_time or "none",
+                    dag.cadence or "missing",
+                    dag.severity or "missing",
+                    dag.alert_target or "missing",
+                    dag.alert_external_classification or "missing",
+                    dag.alert_report_classification or "missing",
+                    dag.sla_time or "missing",
                 ],
                 dag.count,
             )
