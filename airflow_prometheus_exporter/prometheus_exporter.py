@@ -12,7 +12,7 @@ from flask import Response
 from flask_admin import BaseView, expose
 from prometheus_client import REGISTRY, generate_latest
 from prometheus_client.core import GaugeMetricFamily
-from sqlalchemy import Column, String, and_, func
+from sqlalchemy import Column, Float, String, and_, func
 from sqlalchemy.ext.declarative import declarative_base
 
 from airflow.configuration import conf
@@ -21,6 +21,7 @@ from airflow.models import DagModel, DagRun, TaskFail, TaskInstance, XCom
 from airflow.plugins_manager import AirflowPlugin
 from airflow.settings import RBAC, Session
 from airflow.utils.log.logging_mixin import LoggingMixin
+from airflow.utils.sqlalchemy import UtcDateTime
 from airflow.utils.state import State
 from airflow_prometheus_exporter.xcom_config import load_xcom_config
 
@@ -44,7 +45,16 @@ with session_scope(Session) as session:
     class GapDagTag(Base):
         __tablename__ = "gap_dag_tag"
         dag_id = Column(String, primary_key=True)  # hack to have dag_id as PK
-        __table_args__ = {"autoload": True}
+        task_id = Column(String)
+        cadence = Column(String)
+        severerity = Column(String)
+        alert_target = Column(String)
+        instant_slack_alert = Column(String)
+        alert_classification = Column(String)
+        sla_interval = Column(Float)
+        sla_time = Column(String)
+        latest_successful_run = Column(UtcDateTime)
+        # __table_args__ = {"autoload": True}
 
 
 ######################
@@ -416,6 +426,7 @@ def get_sla_miss_dags():
                 dag.latest_successful_run is None
                 or max_execution_date > dag.latest_successful_run
             ):
+
                 dag.latest_successful_run = max_execution_date
             else:
                 max_execution_date = dag.latest_successful_run
