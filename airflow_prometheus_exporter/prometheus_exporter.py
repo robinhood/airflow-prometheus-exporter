@@ -502,6 +502,7 @@ def get_sla_miss_tasks():
                 GapDagTag.sla_time,
                 GapDagTag.alert_target,
                 GapDagTag.alert_classification,
+                GapDagTag.latest_successful_run,
             )
             .join(
                 max_execution_date_query,
