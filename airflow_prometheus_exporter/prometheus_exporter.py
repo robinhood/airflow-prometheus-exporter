@@ -27,6 +27,7 @@ from airflow_prometheus_exporter.xcom_config import load_xcom_config
 CANARY_DAG = "canary_dag"
 RETENTION_TIME = os.environ.get("PROMETHEUS_METRICS_DAYS", 14)
 TIMEZONE = conf.get("core", "default_timezone")
+MISSING = "missing"
 
 
 @contextmanager
@@ -422,11 +423,11 @@ def get_sla_miss_dags():
         for dag in dags:
             dag_metrics = {
                 "dag_id": dag.dag_id,
-                "alert_target": dag.alert_target or "missing",
+                "alert_target": dag.alert_target or MISSING,
                 "alert_external_classification": dag.alert_external_classification
-                or "missing",
+                or MISSING,
                 "alert_report_classification": dag.alert_report_classification
-                or "missing",
+                or MISSING,
                 "sla_miss": 0,
             }
             max_execution_date = dag.max_execution_date
@@ -530,11 +531,11 @@ def get_sla_miss_tasks():
             task_metrics = {
                 "dag_id": task.dag_id,
                 "task_id": task.task_id,
-                "alert_target": task.alert_target or "missing",
+                "alert_target": task.alert_target or MISSING,
                 "alert_external_classification": task.alert_external_classification
-                or "missing",
+                or MISSING,
                 "alert_report_classification": task.alert_report_classification
-                or "missing",
+                or MISSING,
                 "sla_miss": 0,
             }
             max_execution_date = task.max_execution_date
@@ -619,13 +620,13 @@ class MetricsCollector(object):
                     task.dag_id,
                     task.task_id,
                     task.owners,
-                    task.state or "missing",
-                    task.cadence or "missing",
-                    task.severity or "missing",
-                    task.alert_target or "missing",
-                    task.alert_external_classification or "missing",
-                    task.alert_report_classification or "missing",
-                    task.sla_time or "missing",
+                    task.state or MISSING,
+                    task.cadence or MISSING,
+                    task.severity or MISSING,
+                    task.alert_target or MISSING,
+                    task.alert_external_classification or MISSING,
+                    task.alert_report_classification or MISSING,
+                    task.sla_time or MISSING,
                 ],
                 task.value,
             )
@@ -679,12 +680,12 @@ class MetricsCollector(object):
                     dag.dag_id,
                     dag.owners,
                     dag.state,
-                    dag.cadence or "missing",
-                    dag.severity or "missing",
-                    dag.alert_target or "missing",
-                    dag.alert_external_classification or "missing",
-                    dag.alert_report_classification or "missing",
-                    dag.sla_time or "missing",
+                    dag.cadence or MISSING,
+                    dag.severity or MISSING,
+                    dag.alert_target or MISSING,
+                    dag.alert_external_classification or MISSING,
+                    dag.alert_report_classification or MISSING,
+                    dag.sla_time or MISSING,
                 ],
                 dag.count,
             )
