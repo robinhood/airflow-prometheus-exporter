@@ -426,8 +426,10 @@ def get_sla_miss_dags():
                 dag.latest_successful_run is None
                 or max_execution_date > dag.latest_successful_run
             ):
-
-                dag.latest_successful_run = max_execution_date
+                session.query(GapDagTag).filter(GapDagTag.dag_id == dag.dag_id).update(
+                    {GapDagTag.latest_successful_run: max_execution_date},
+                    synchronize_session=False,
+                )
             else:
                 max_execution_date = dag.latest_successful_run
 
