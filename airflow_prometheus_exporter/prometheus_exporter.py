@@ -564,9 +564,9 @@ def get_sla_miss_tasks():
             if pendulum.now("America/Los_Angeles") > sla_time and diff_from_expected > (
                 task.sla_interval * 24 * 60
             ):
-                task["sla_miss"] = 1
+                task_metrics["sla_miss"] = 1
             elif diff_from_expected > ((task.sla_interval + 1) * 24 * 60):
-                task["sla_miss"] = 1
+                task_metrics["sla_miss"] = 1
             sla_miss_tasks.append(task_metrics)
         return sla_miss_tasks
 
