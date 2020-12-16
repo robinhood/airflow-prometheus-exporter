@@ -2,13 +2,18 @@
 # -*- coding: utf-8 -*-
 
 """The setup script."""
-
+import pathlib
+import pkg_resources
 from setuptools import find_packages, setup
 
 with open("README.md", encoding="utf-8") as readme_file:
     readme = readme_file.read()
 
-
+with pathlib.Path("requirements.txt").open() as requirements_txt:
+    install_requires = [
+        str(requirement)
+        for requirement in pkg_resources.parse_requirements(requirements_txt)
+    ]
 extras_require = {"dev": ["bumpversion", "tox", "twine"]}  # noqa
 
 setup(
@@ -23,7 +28,7 @@ setup(
         "Programming Language :: Python :: 3.7",
     ],
     description="Prometheus Exporter for Airflow Metrics",
-    install_requires=[],
+    install_requires=install_requires,
     extras_require=extras_require,
     license="BSD 3-Clause",
     long_description=readme,
