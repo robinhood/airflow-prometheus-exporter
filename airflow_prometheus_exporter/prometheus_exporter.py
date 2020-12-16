@@ -12,7 +12,7 @@ from flask import Response
 from flask_admin import BaseView, expose
 from prometheus_client import REGISTRY, generate_latest
 from prometheus_client.core import GaugeMetricFamily
-from sqlalchemy import Column, String, and_, func
+from sqlalchemy import Column, Float, String, and_, func
 from sqlalchemy.ext.declarative import declarative_base
 
 from airflow.configuration import conf
@@ -20,6 +20,7 @@ from airflow.models import DagModel, DagRun, TaskFail, TaskInstance, XCom
 from airflow.plugins_manager import AirflowPlugin
 from airflow.settings import RBAC, Session
 from airflow.utils.log.logging_mixin import LoggingMixin
+from airflow.utils.sqlalchemy import UtcDateTime
 from airflow.utils.state import State
 from airflow_prometheus_exporter.xcom_config import load_xcom_config
 
@@ -43,7 +44,16 @@ with session_scope(Session) as session:
     class GapDagTag(Base):
         __tablename__ = "gap_dag_tag"
         dag_id = Column(String, primary_key=True)  # hack to have dag_id as PK
-        __table_args__ = {"autoload": True}
+        task_id = Column(String)
+        cadence = Column(String)
+        severerity = Column(String)
+        alert_target = Column(String)
+        instant_slack_alert = Column(String)
+        alert_classification = Column(String)
+        sla_interval = Column(Float)
+        sla_time = Column(String)
+        latest_successful_run = Column(UtcDateTime)
+        # __table_args__ = {"autoload": True}
 
 
 ######################
@@ -391,6 +401,7 @@ def get_sla_miss_dags():
                 GapDagTag.sla_time,
                 GapDagTag.alert_target,
                 GapDagTag.alert_classification,
+                GapDagTag.latest_successful_run,
                 max_execution_dt_query.c.schedule_interval,
                 max_execution_dt_query.c.max_execution_date,
             )
@@ -409,23 +420,51 @@ def get_sla_miss_dags():
                 "alert_classification": dag.alert_classification,
                 "sla_miss": 0,
             }
-            try:
+            max_execution_date = dag.max_execution_date
+            if (
+                dag.latest_successful_run is None
+                or max_execution_date > dag.latest_successful_run
+            ):
+                session.query(GapDagTag).filter(GapDagTag.dag_id == dag.dag_id).update(
+                    {GapDagTag.latest_successful_run: max_execution_date}
+                )
+                session.commit()
+            else:
+                max_execution_date = dag.latest_successful_run
+
+            if croniter.croniter.is_valid(dag.schedule_interval):
                 cron = croniter.croniter(dag.schedule_interval)
                 expected_last_run = cron.get_prev(datetime)
+
                 diff_from_expected = (
                     pendulum.instance(expected_last_run)
-                    - pendulum.instance(dag.max_execution_date)
+                    - pendulum.instance(max_execution_date)
                 ).in_minutes()
                 sla_time = dateparser.parse(
                     "today " + dag.sla_time,
-                    settings={"TIMEZONE": "America/Los_Angeles"},
+                    settings={
+                        "RELATIVE_BASE": expected_last_run,
+                        "TIMEZONE": "America/Los_Angeles",
+                    },
                 )
-                if pendulum.now(
-                    "America/Los_Angeles"
-                ) > sla_time and diff_from_expected > (dag.sla_interval * 24 * 60):
-                    dag_metrics["sla_miss"] = 1
-            except:
-                pass
+            else:
+                sla_time = dateparser.parse("today " + dag.sla_time)
+                expected_last_run = sla_time.replace(
+                    hours=0, minutes=0, seconds=0, microsecond=0
+                )
+                max_execution_date = max_execution_date.replace(
+                    hours=0, minutes=0, seconds=0, microsecond=0
+                )
+                diff_from_expected = pendulum.instance(
+                    expected_last_run
+                ) - pendulum.instance(max_execution_date)
+
+            if pendulum.now("America/Los_Angeles") > sla_time and diff_from_expected > (
+                dag.sla_interval * 24 * 60
+            ):
+                dag_metrics["sla_miss"] = 1
+            elif diff_from_expected > ((dag.sla_interval + 1) * 24 * 60):
+                dag_metrics["sla_miss"] = 1
             sla_miss_dags_metrics.append(dag_metrics)
         return sla_miss_dags_metrics
 
@@ -463,6 +502,7 @@ def get_sla_miss_tasks():
                 GapDagTag.sla_time,
                 GapDagTag.alert_target,
                 GapDagTag.alert_classification,
+                GapDagTag.latest_successful_run,
             )
             .join(
                 max_execution_date_query,
@@ -483,23 +523,50 @@ def get_sla_miss_tasks():
                 "alert_classification": task.alert_classification,
                 "sla_miss": 0,
             }
-            try:
+            max_execution_date = task.max_execution_date
+            if (
+                task.latest_successful_run is None
+                or max_execution_date > task.latest_successful_run
+            ):
+                session.query(GapDagTag).filter(
+                    GapDagTag.dag_id == task.dag_id, GapDagTag.task_id == task.task_id
+                ).update({GapDagTag.latest_successful_run: max_execution_date})
+                session.commit()
+            else:
+                max_execution_date = task.latest_successful_run
+
+            if croniter.croniter.is_valid(task.schedule_interval):
                 cron = croniter.croniter(task.schedule_interval)
                 expected_last_run = cron.get_prev(datetime)
                 diff_from_expected = (
                     pendulum.instance(expected_last_run)
-                    - pendulum.instance(dag.max_execution_date)
+                    - pendulum.instance(max_execution_date)
                 ).in_minutes()
                 sla_time = dateparser.parse(
                     "today " + task.sla_time,
-                    settings={"TIMEZONE": "America/Los_Angeles"},
+                    settings={
+                        "RELATIVE_BASE": expected_last_run,
+                        "TIMEZONE": "America/Los_Angeles",
+                    },
                 )
-                if pendulum.now(
-                    "America/Los_Angeles"
-                ) > sla_time and diff_from_expected > (task.sla_interval * 24 * 60):
-                    task["sla_miss"] = 1
-            except:
-                pass
+            else:
+                sla_time = dateparser.parse("today " + task.sla_time)
+                expected_last_run = sla_time.replace(
+                    hours=0, minutes=0, seconds=0, microsecond=0
+                )
+                max_execution_date = task.max_execution_date.replace(
+                    hours=0, minutes=0, seconds=0, microsecond=0
+                )
+                diff_from_expected = pendulum.instance(
+                    expected_last_run
+                ) - pendulum.instance(max_execution_date)
+
+            if pendulum.now("America/Los_Angeles") > sla_time and diff_from_expected > (
+                task.sla_interval * 24 * 60
+            ):
+                task_metrics["sla_miss"] = 1
+            elif diff_from_expected > ((task.sla_interval + 1) * 24 * 60):
+                task_metrics["sla_miss"] = 1
             sla_miss_tasks.append(task_metrics)
         return sla_miss_tasks
 

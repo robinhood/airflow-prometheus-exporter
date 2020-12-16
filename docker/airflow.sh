@@ -9,5 +9,6 @@ sqlite3 "${AF_HOME}/airflow.db" "create table gap_dag_tag(
 	instant_slack_alert varchar(250),
     alert_classification varchar(250),
     sla_interval float,
-    sla_time text);"
+    sla_time text,
+    latest_successful_run text);"
 airflow webserver
