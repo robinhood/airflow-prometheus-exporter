@@ -455,9 +455,10 @@ def get_sla_miss_dags():
                 max_execution_date = max_execution_date.replace(
                     hour=0, minute=0, second=0, microsecond=0
                 )
-                diff_from_expected = pendulum.instance(
-                    expected_last_run
-                ) - pendulum.instance(max_execution_date)
+                diff_from_expected = (
+                    pendulum.instance(expected_last_run)
+                    - pendulum.instance(max_execution_date)
+                ).in_minutes()
 
             if pendulum.now("America/Los_Angeles") > sla_time and diff_from_expected > (
                 dag.sla_interval * 24 * 60
@@ -557,9 +558,10 @@ def get_sla_miss_tasks():
                 max_execution_date = task.max_execution_date.replace(
                     hour=0, minute=0, second=0, microsecond=0
                 )
-                diff_from_expected = pendulum.instance(
-                    expected_last_run
-                ) - pendulum.instance(max_execution_date)
+                diff_from_expected = (
+                    pendulum.instance(expected_last_run)
+                    - pendulum.instance(max_execution_date)
+                ).in_minutes()
 
             if pendulum.now("America/Los_Angeles") > sla_time and diff_from_expected > (
                 task.sla_interval * 24 * 60
