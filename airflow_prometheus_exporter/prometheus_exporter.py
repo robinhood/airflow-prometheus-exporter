@@ -422,7 +422,7 @@ def get_sla_miss_dags():
         for dag in dags:
             dag_metrics = {
                 "dag_id": dag.dag_id,
-                "alert_target": dag.alert_target,
+                "alert_target": dag.alert_target or "missing",
                 "alert_external_classification": dag.alert_external_classification
                 or "missing",
                 "alert_report_classification": dag.alert_report_classification
