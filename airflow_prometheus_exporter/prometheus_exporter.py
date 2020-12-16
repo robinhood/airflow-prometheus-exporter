@@ -450,10 +450,10 @@ def get_sla_miss_dags():
             else:
                 sla_time = dateparser.parse("today " + dag.sla_time)
                 expected_last_run = sla_time.replace(
-                    hours=0, minutes=0, seconds=0, microsecond=0
+                    hour=0, minute=0, second=0, microsecond=0
                 )
                 max_execution_date = max_execution_date.replace(
-                    hours=0, minutes=0, seconds=0, microsecond=0
+                    hour=0, minute=0, second=0, microsecond=0
                 )
                 diff_from_expected = pendulum.instance(
                     expected_last_run
@@ -552,10 +552,10 @@ def get_sla_miss_tasks():
             else:
                 sla_time = dateparser.parse("today " + task.sla_time)
                 expected_last_run = sla_time.replace(
-                    hours=0, minutes=0, seconds=0, microsecond=0
+                    hour=0, minute=0, second=0, microsecond=0
                 )
                 max_execution_date = task.max_execution_date.replace(
-                    hours=0, minutes=0, seconds=0, microsecond=0
+                    hour=0, minute=0, second=0, microsecond=0
                 )
                 diff_from_expected = pendulum.instance(
                     expected_last_run
