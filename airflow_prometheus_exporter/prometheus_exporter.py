@@ -16,7 +16,6 @@ from sqlalchemy import Column, Float, String, and_, func
 from sqlalchemy.ext.declarative import declarative_base
 
 from airflow.configuration import conf
-from airflow.jobs.base_job import BaseJob
 from airflow.models import DagModel, DagRun, TaskFail, TaskInstance, XCom
 from airflow.plugins_manager import AirflowPlugin
 from airflow.settings import RBAC, Session
@@ -481,11 +480,10 @@ def get_sla_miss_tasks():
                 func.max(TaskInstance.execution_date).label("max_execution_date"),
             )
             .join(DagModel, DagModel.dag_id == TaskInstance.dag_id)
-            .join(BaseJob, TaskInstance.job_id == BaseJob.id)
             .filter(
                 DagModel.is_active == True,
                 DagModel.is_paused == False,
-                BaseJob.state == State.SUCCESS,
+                TaskInstance.state == State.SUCCESS,
                 TaskInstance.execution_date > min_date_to_filter,
             )
             .group_by(
@@ -524,6 +522,18 @@ def get_sla_miss_tasks():
                 "alert_classification": task.alert_classification,
                 "sla_miss": 0,
             }
+            max_execution_date = task.max_execution_date
+            if (
+                task.latest_successful_run is None
+                or max_execution_date > task.latest_successful_run
+            ):
+                session.query(GapDagTag).filter(
+                    GapDagTag.dag_id == task.dag_id, GapDagTag.task_id == task.task_id
+                ).update({GapDagTag.latest_successful_run: max_execution_date})
+                session.commit()
+            else:
+                max_execution_date = task.latest_successful_run
+
             if croniter.croniter.is_valid(task.schedule_interval):
                 cron = croniter.croniter(task.schedule_interval)
                 expected_last_run = cron.get_prev(datetime)
