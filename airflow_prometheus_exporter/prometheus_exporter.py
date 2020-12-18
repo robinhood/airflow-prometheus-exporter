@@ -14,6 +14,7 @@ from flask_admin import BaseView, expose
 from prometheus_client import generate_latest, REGISTRY
 from prometheus_client.core import GaugeMetricFamily
 from sqlalchemy import and_, func
+from sqlalchemy.orm import aliased
 
 from airflow_prometheus_exporter.xcom_config import load_xcom_config
 
@@ -65,67 +66,66 @@ def get_dag_state_info():
 def get_dag_duration_info():
     """Duration of successful DAG Runs."""
     with session_scope(Session) as session:
-        max_execution_dt_query = (
+        # The explicit dag_model alias is used to bridge into a dependent sub-query.
+        #
+        # SELECT ...
+        #   FROM dag outer_dag
+        #   JOIN dag_run
+        #     ON dag_run.dag_id = outer_dag.dag_id
+        #  WHERE dag_run.execution_date = (
+        #          SELECT MAX(execution_date)
+        #            FROM dag_run dagrun_inner
+        #           WHERE dagrun_inner.dag_id = outer_dag.dag_id
+        #             AND dagrun_inner.state = 'success'
+        #             AND dagrun_inner.end_date IS NOT NULL
+        #        )
+        dag_model = aliased(DagModel, name="outer_dag")
+        dag_run_inner = aliased(DagRun, name="dagrun_inner")
+        dependent_max_execution_date = (
             session.query(
-                DagRun.dag_id,
-                func.max(DagRun.execution_date).label("max_execution_dt"),
+                func.max(dag_run_inner.execution_date)
             )
-            .join(DagModel, DagModel.dag_id == DagRun.dag_id)
             .filter(
-                DagModel.is_active == True,  # noqa
-                DagModel.is_paused == False,
-                DagRun.state == State.SUCCESS,
-                DagRun.end_date.isnot(None),
+                dag_run_inner.state == State.SUCCESS,
+                dag_run_inner.dag_id == dag_model.dag_id,
+                dag_run_inner.end_date.isnot(None),
             )
-            .group_by(DagRun.dag_id)
             .subquery()
         )
 
-        dag_start_dt_query = (
+        dag_start_end_query = (
             session.query(
-                max_execution_dt_query.c.dag_id,
-                max_execution_dt_query.c.max_execution_dt.label(
-                    "execution_date"
-                ),
+                DagRun.dag_id,
                 func.min(TaskInstance.start_date).label("start_date"),
+                DagRun.end_date,
+            )
+            .join(
+                dag_model,
+                dag_model.dag_id == DagRun.dag_id
             )
             .join(
                 TaskInstance,
                 and_(
-                    TaskInstance.dag_id == max_execution_dt_query.c.dag_id,
-                    (
-                        TaskInstance.execution_date
-                        == max_execution_dt_query.c.max_execution_dt
-                    ),
-                ),
-            )
-            .group_by(
-                max_execution_dt_query.c.dag_id,
-                max_execution_dt_query.c.max_execution_dt,
-            )
-            .subquery()
-        )
-
-        return (
-            session.query(
-                dag_start_dt_query.c.dag_id,
-                dag_start_dt_query.c.start_date,
-                DagRun.end_date,
-            )
-            .join(
-                DagRun,
-                and_(
-                    DagRun.dag_id == dag_start_dt_query.c.dag_id,
-                    DagRun.execution_date
-                    == dag_start_dt_query.c.execution_date,
-                ),
+                    DagRun.dag_id == TaskInstance.dag_id,
+                    DagRun.execution_date == TaskInstance.execution_date
+                )
             )
             .filter(
+                dag_model.is_active == True,  # noqa
+                dag_model.is_paused == False,
+                DagRun.state == State.SUCCESS,
+                DagRun.end_date.isnot(None),
+                DagRun.execution_date == dependent_max_execution_date,
                 TaskInstance.start_date.isnot(None),
                 TaskInstance.end_date.isnot(None),
             )
-            .all()
+            .group_by(
+                DagRun.dag_id,
+                DagRun.end_date,
+            )
         )
+
+        return dag_start_end_query.all()
 
 
 ######################
@@ -186,24 +186,34 @@ def get_task_failure_counts():
 def get_xcom_params(task_id):
     """XCom parameters for matching task_id's for the latest run of a DAG."""
     with session_scope(Session) as session:
-        max_execution_dt_query = (
+        dag_model = aliased(DagModel, name="outer_dag")
+        dag_run_inner = aliased(DagRun, name="dagrun_inner")
+        dependent_max_execution_date = (
             session.query(
-                DagRun.dag_id,
-                func.max(DagRun.execution_date).label("max_execution_dt"),
+                func.max(dag_run_inner.execution_date)
             )
-            .group_by(DagRun.dag_id)
+            .filter(
+                dag_run_inner.dag_id == dag_model.dag_id
+            )
             .subquery()
         )
 
-        query = session.query(XCom.dag_id, XCom.task_id, XCom.value).join(
-            max_execution_dt_query,
-            and_(
-                (XCom.dag_id == max_execution_dt_query.c.dag_id),
-                (
-                    XCom.execution_date
-                    == max_execution_dt_query.c.max_execution_dt
-                ),
-            ),
+        query = (
+            session.query(
+                XCom.dag_id,
+                XCom.task_id,
+                XCom.value,
+            )
+            .join(
+                DagRun,
+                and_(
+                    DagRun.dag_id == XCom.dag_id,
+                    DagRun.execution_date == XCom.execution_date,
+                )
+            )
+            .filter(
+                DagRun.execution_date == dependent_max_execution_date
+            )
         )
         if task_id == "all":
             return query.all()
@@ -238,23 +248,20 @@ def extract_xcom_parameter(value):
 def get_task_duration_info():
     """Duration of successful tasks in seconds."""
     with session_scope(Session) as session:
-        max_execution_dt_query = (
+        dag_model = aliased(DagModel, name="outer_dag")
+        dag_run_inner = aliased(DagRun, name="dagrun_inner")
+        dependent_max_execution_date = (
             session.query(
-                DagRun.dag_id,
-                func.max(DagRun.execution_date).label("max_execution_dt"),
+                func.max(dag_run_inner.execution_date)
             )
-            .join(DagModel, DagModel.dag_id == DagRun.dag_id,)
             .filter(
-                DagModel.is_active == True,  # noqa
-                DagModel.is_paused == False,
-                DagRun.state == State.SUCCESS,
-                DagRun.end_date.isnot(None),
+                dag_run_inner.state == State.SUCCESS,
+                dag_run_inner.dag_id == dag_model.dag_id
             )
-            .group_by(DagRun.dag_id)
             .subquery()
         )
 
-        return (
+        task_query = (
             session.query(
                 TaskInstance.dag_id,
                 TaskInstance.task_id,
@@ -263,22 +270,26 @@ def get_task_duration_info():
                 TaskInstance.execution_date,
             )
             .join(
-                max_execution_dt_query,
+                DagRun,
                 and_(
-                    (TaskInstance.dag_id == max_execution_dt_query.c.dag_id),
-                    (
-                        TaskInstance.execution_date
-                        == max_execution_dt_query.c.max_execution_dt
-                    ),
-                ),
+                    DagRun.dag_id == TaskInstance.dag_id,
+                    DagRun.execution_date == TaskInstance.execution_date,
+                )
             )
+            .join(dag_model, dag_model.dag_id == DagRun.dag_id,)
             .filter(
+                dag_model.is_active == True,  # noqa
+                dag_model.is_paused == False,
+                DagRun.state == State.SUCCESS,
+                DagRun.end_date.isnot(None),
+                DagRun.execution_date == dependent_max_execution_date,
                 TaskInstance.state == State.SUCCESS,
                 TaskInstance.start_date.isnot(None),
                 TaskInstance.end_date.isnot(None),
             )
-            .all()
         )
+
+        return task_query.all()
 
 
 ######################
