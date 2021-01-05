@@ -471,11 +471,11 @@ def get_sla_miss_dags():
                     - pendulum.instance(max_execution_date)
                 ).in_minutes()
 
-            if pendulum.now("America/Los_Angeles") > sla_time and diff_from_expected > (
-                dag.sla_interval * 24 * 60
-            ):
+            if pendulum.now(
+                "America/Los_Angeles"
+            ) > sla_time and diff_from_expected >= (dag.sla_interval * 24 * 60):
                 dag_metrics["sla_miss"] = 1
-            elif diff_from_expected > ((dag.sla_interval + 1) * 24 * 60):
+            elif diff_from_expected >= ((dag.sla_interval + 1) * 24 * 60):
                 dag_metrics["sla_miss"] = 1
             sla_miss_dags_metrics.append(dag_metrics)
         return sla_miss_dags_metrics
@@ -580,11 +580,11 @@ def get_sla_miss_tasks():
                     - pendulum.instance(max_execution_date)
                 ).in_minutes()
 
-            if pendulum.now("America/Los_Angeles") > sla_time and diff_from_expected > (
-                task.sla_interval * 24 * 60
-            ):
+            if pendulum.now(
+                "America/Los_Angeles"
+            ) > sla_time and diff_from_expected >= (task.sla_interval * 24 * 60):
                 task_metrics["sla_miss"] = 1
-            elif diff_from_expected > ((task.sla_interval + 1) * 24 * 60):
+            elif diff_from_expected >= ((task.sla_interval + 1) * 24 * 60):
                 task_metrics["sla_miss"] = 1
             sla_miss_tasks.append(task_metrics)
         return sla_miss_tasks
