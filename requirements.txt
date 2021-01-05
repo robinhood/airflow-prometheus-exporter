@@ -1,5 +1,5 @@
 apache-airflow==1.10.12
-croniter==0.3.36
+croniter==0.3.37
 dateparser==1.0.0
 prometheus_client==0.8.0
 pendulum==1.4.4
