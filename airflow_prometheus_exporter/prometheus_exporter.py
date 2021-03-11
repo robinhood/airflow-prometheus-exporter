@@ -53,6 +53,9 @@ with session_scope(Session) as session:
         alert_report_classification = Column(String)
         sla_interval = Column(Float)
         sla_time = Column(String)
+        group_pagerduty = Column(String)
+        group_business_line = Column(String)
+        inhibit_rule = Column(String)
         latest_successful_run = Column(UtcDateTime)
 
 
@@ -405,6 +408,9 @@ def get_sla_miss_dags():
                 DelayAlertMetaData.alert_target,
                 DelayAlertMetaData.alert_external_classification,
                 DelayAlertMetaData.alert_report_classification,
+                DelayAlertMetaData.group_pagerduty,
+                DelayAlertMetaData.group_business_line,
+                DelayAlertMetaData.inhibit_rule,
                 DelayAlertMetaData.latest_successful_run,
                 max_execution_dt_query.c.schedule_interval,
                 max_execution_dt_query.c.max_execution_date,
@@ -429,6 +435,9 @@ def get_sla_miss_dags():
                 "alert_report_classification": dag.alert_report_classification
                 or MISSING,
                 "sla_miss": 0,
+                "group_pagerduty": dag.group_pagerduty or MISSING,
+                "group_business_line": dag.group_business_line or MISSING,
+                "inhibit_rule": dag.inhibit_rule or MISSING,
             }
             max_execution_date = dag.max_execution_date
             if (
@@ -515,6 +524,9 @@ def get_sla_miss_tasks():
                 DelayAlertMetaData.alert_target,
                 DelayAlertMetaData.alert_external_classification,
                 DelayAlertMetaData.alert_report_classification,
+                DelayAlertMetaData.group_pagerduty,
+                DelayAlertMetaData.group_business_line,
+                DelayAlertMetaData.inhibit_rule,
                 DelayAlertMetaData.latest_successful_run,
             )
             .join(
@@ -538,6 +550,9 @@ def get_sla_miss_tasks():
                 "alert_report_classification": task.alert_report_classification
                 or MISSING,
                 "sla_miss": 0,
+                "group_pagerduty": task.group_pagerduty or MISSING,
+                "group_business_line": task.group_business_line or MISSING,
+                "inhibit_rule": task.inhibit_rule or MISSING,
             }
             max_execution_date = task.max_execution_date
             if (
@@ -614,6 +629,8 @@ class MetricsCollector(object):
                 "alert_external_classification",
                 "alert_report_classification",
                 "sla_time",
+                "network",
+                "business",
             ],
         )
         for task in task_info:
@@ -629,6 +646,8 @@ class MetricsCollector(object):
                     task.alert_external_classification or MISSING,
                     task.alert_report_classification or MISSING,
                     task.sla_time or MISSING,
+                    "network",
+                    "business",
                 ],
                 task.value,
             )
@@ -673,7 +692,10 @@ class MetricsCollector(object):
                 "severity",
                 "alert_target",
                 "alert_external_classification",
-                "alert_report_classification" "sla_time",
+                "alert_report_classification",
+                "sla_time",
+                "network",
+                "business",
             ],
         )
         for dag in dag_info:
@@ -688,6 +710,8 @@ class MetricsCollector(object):
                     dag.alert_external_classification or MISSING,
                     dag.alert_report_classification or MISSING,
                     dag.sla_time or MISSING,
+                    "network",
+                    "business",
                 ],
                 dag.count,
             )
@@ -766,6 +790,9 @@ class MetricsCollector(object):
                 "alert_target",
                 "alert_external_classification",
                 "alert_report_classification",
+                "group_pagerduty",
+                "group_business_line",
+                "inhibit_rule",
             ],
         )
 
@@ -776,6 +803,9 @@ class MetricsCollector(object):
                     dag["alert_target"],
                     dag["alert_external_classification"],
                     dag["alert_report_classification"],
+                    dag["group_pagerduty"],
+                    dag["group_business_line"],
+                    dag["inhibit_rule"],
                 ],
                 dag["sla_miss"],
             )
@@ -791,6 +821,9 @@ class MetricsCollector(object):
                 "alert_target",
                 "alert_external_classification",
                 "alert_report_classification",
+                "group_pagerduty",
+                "group_business_line",
+                "inhibit_rule",
             ],
         )
 
@@ -802,6 +835,9 @@ class MetricsCollector(object):
                     tasks["alert_target"],
                     tasks["alert_external_classification"],
                     tasks["alert_report_classification"],
+                    tasks["group_pagerduty"],
+                    tasks["group_business_line"],
+                    tasks["inhibit_rule"],
                 ],
                 tasks["sla_miss"],
             )
