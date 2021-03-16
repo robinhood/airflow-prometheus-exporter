@@ -381,6 +381,37 @@ def get_num_queued_tasks():
         )
 
 
+
+seconds_per_unit = {
+    "s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800
+}
+def convert_to_seconds(s):
+    return int(s[:-1]) * seconds_per_unit[s[-1]] 
+
+def sla_check(sla_interval, sla_time, max_execution_date, cadence):
+    now = pendulum.now("America/Los_Angeles")
+    interval = "{}d".format(int(sla_interval + 1))
+    interval_in_second = convert_to_seconds(interval)
+
+    if sla_time:
+        naive_sla_time = dateparser.parse("today " + sla_time)
+        sla_time = timezone.localize(naive_sla_time)
+    else:
+        # Usually hourly, intraday
+        sla_time = now
+        
+    checkpoint = sla_time.timestamp() - interval_in_second
+    if now > sla_time and max_execution_date.timestamp() < checkpoint:
+        return 1
+        
+    checkpoint -= interval_in_second
+    if cadence != "triggered" and max_execution_date.timestamp() < checkpoint:
+        # We only check successful runs after sla_time in day for triggered DAGs e.g. PPD
+        return 1
+
+    return 0
+
+
 def get_sla_miss_dags():
     min_date_to_filter = pendulum.now(TIMEZONE).subtract(days=RETENTION_TIME)
     with session_scope(Session) as session:
@@ -392,7 +423,7 @@ def get_sla_miss_dags():
             )
             .join(DagModel, DagModel.dag_id == DagRun.dag_id)
             .filter(
-                DagModel.is_active == True,  # noqa
+                DagModel.is_active == True,
                 DagModel.is_paused == False,
                 DagRun.state == State.SUCCESS,
                 DagRun.execution_date > min_date_to_filter,
@@ -453,41 +484,13 @@ def get_sla_miss_dags():
             else:
                 max_execution_date = dag.latest_successful_run
 
-            cron_time = dag.schedule_interval
-            if isinstance(cron_time, str) and croniter.croniter.is_valid(cron_time):
-                cron = croniter.croniter(dag.schedule_interval)
-                expected_last_run = cron.get_prev(datetime)
+            dag_metrics["sla_miss"] = sla_check(
+                dag.sla_interval,
+                dag.sla_time,
+                max_execution_date,
+                dag.cadence,
+            )
 
-                diff_from_expected = (
-                    pendulum.instance(expected_last_run)
-                    - pendulum.instance(max_execution_date)
-                ).in_minutes()
-                sla_time = dateparser.parse(
-                    "today " + dag.sla_time,
-                    settings={
-                        "RELATIVE_BASE": expected_last_run,
-                        "TIMEZONE": "America/Los_Angeles",
-                    },
-                )
-            else:
-                sla_time = dateparser.parse("today " + dag.sla_time)
-                expected_last_run = sla_time.replace(
-                    hour=0, minute=0, second=0, microsecond=0
-                )
-                max_execution_date = max_execution_date.replace(
-                    hour=0, minute=0, second=0, microsecond=0
-                )
-                diff_from_expected = (
-                    pendulum.instance(expected_last_run)
-                    - pendulum.instance(max_execution_date)
-                ).in_minutes()
-
-            if pendulum.now("America/Los_Angeles") > sla_time and diff_from_expected > (
-                dag.sla_interval * 24 * 60
-            ):
-                dag_metrics["sla_miss"] = 1
-            elif diff_from_expected > ((dag.sla_interval + 1) * 24 * 60):
-                dag_metrics["sla_miss"] = 1
             sla_miss_dags_metrics.append(dag_metrics)
         return sla_miss_dags_metrics
 
@@ -571,40 +574,13 @@ def get_sla_miss_tasks():
             else:
                 max_execution_date = task.latest_successful_run
 
-            cron_time = task.schedule_interval
-            if isinstance(cron_time, str) and croniter.croniter.is_valid(cron_time):
-                cron = croniter.croniter(task.schedule_interval)
-                expected_last_run = cron.get_prev(datetime)
-                diff_from_expected = (
-                    pendulum.instance(expected_last_run)
-                    - pendulum.instance(max_execution_date)
-                ).in_minutes()
-                sla_time = dateparser.parse(
-                    "today " + task.sla_time,
-                    settings={
-                        "RELATIVE_BASE": expected_last_run,
-                        "TIMEZONE": "America/Los_Angeles",
-                    },
-                )
-            else:
-                sla_time = dateparser.parse("today " + task.sla_time)
-                expected_last_run = sla_time.replace(
-                    hour=0, minute=0, second=0, microsecond=0
-                )
-                max_execution_date = task.max_execution_date.replace(
-                    hour=0, minute=0, second=0, microsecond=0
-                )
-                diff_from_expected = (
-                    pendulum.instance(expected_last_run)
-                    - pendulum.instance(max_execution_date)
-                ).in_minutes()
+            task_metrics["sla_miss"] = sla_check(
+                task.sla_interval,
+                task.sla_time,
+                max_execution_date,
+                dag.cadence,
+            )
 
-            if pendulum.now("America/Los_Angeles") > sla_time and diff_from_expected > (
-                task.sla_interval * 24 * 60
-            ):
-                task_metrics["sla_miss"] = 1
-            elif diff_from_expected > ((task.sla_interval + 1) * 24 * 60):
-                task_metrics["sla_miss"] = 1
             sla_miss_tasks.append(task_metrics)
         return sla_miss_tasks
 
