@@ -390,7 +390,6 @@ def convert_to_seconds(s):
 
 def sla_check(sla_interval, sla_time, max_execution_date, cadence):
     now = pendulum.now("America/Los_Angeles")
-    interval = "{}d".format(int(sla_interval + 1))
     interval_in_second = convert_to_seconds(interval)
 
     if sla_time:
