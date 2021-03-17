@@ -53,7 +53,7 @@ with session_scope(Session) as session:
         alert_target = Column(String)
         alert_external_classification = Column(String)
         alert_report_classification = Column(String)
-        sla_interval = Column(Float)
+        sla_interval = Column(String)
         sla_time = Column(String)
         group_pagerduty = Column(String)
         group_business_line = Column(String)
@@ -389,12 +389,12 @@ seconds_per_unit = {
 }
 sla_interval_pattern = re.compile("[ ]*([0-9]+).*(s|m|h|d|w)[ ]*")
 def convert_to_seconds(sla_interval):
-    match = re.match(sla_interval_pattern, sla_interval.strip())
+    match = re.match(sla_interval_pattern, sla_interval)
     return int(match.group(1)) * seconds_per_unit[match.group(2)] 
 
 def sla_check(sla_interval, sla_time, max_execution_date, cadence):
     now = pendulum.now(TIMEZONE_LA)
-    interval_in_second = convert_to_seconds(interval)
+    interval_in_second = convert_to_seconds(sla_interval)
 
     if sla_time:
         naive_sla_time = dateparser.parse("today " + sla_time)
@@ -440,6 +440,7 @@ def get_sla_miss_dags():
                 DelayAlertMetaData.dag_id,
                 DelayAlertMetaData.sla_interval,
                 DelayAlertMetaData.sla_time,
+                DelayAlertMetaData.cadence,
                 DelayAlertMetaData.severity,
                 DelayAlertMetaData.alert_target,
                 DelayAlertMetaData.alert_external_classification,
@@ -530,6 +531,7 @@ def get_sla_miss_tasks():
                 DelayAlertMetaData.sla_interval,
                 DelayAlertMetaData.sla_time,
                 DelayAlertMetaData.severity,
+                DelayAlertMetaData.cadence,
                 DelayAlertMetaData.alert_target,
                 DelayAlertMetaData.alert_external_classification,
                 DelayAlertMetaData.alert_report_classification,
@@ -580,7 +582,7 @@ def get_sla_miss_tasks():
                 task.sla_interval,
                 task.sla_time,
                 max_execution_date,
-                dag.cadence,
+                task.cadence,
             )
 
             sla_miss_tasks.append(task_metrics)
