@@ -403,12 +403,14 @@ def sla_check(sla_interval, sla_time, max_execution_date, cadence):
         # Usually hourly, intraday
         sla_time = now
         
-    checkpoint = sla_time.timestamp() - interval_in_second
-    if now > sla_time and max_execution_date.timestamp() < checkpoint:
+    checkpoint =  sla_time.timestamp() - interval_in_second
+    sla_miss = max_execution_date.timestamp() < checkpoint
+    if sla_miss and now >= sla_time:
         return True
         
     checkpoint -= interval_in_second
-    if cadence != "triggered" and max_execution_date.timestamp() < checkpoint:
+    sla_miss = max_execution_date.timestamp() < checkpoint
+    if sla_miss and cadence != "triggered":
         # Check for previous successful run if before sla_time in day.
         # Filter out triggered DAGs e.g. PPD
         return True
