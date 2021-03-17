@@ -2,10 +2,11 @@
 import json
 import os
 import pickle
+import pytz
+import re
 from contextlib import contextmanager
 from datetime import datetime
 
-import croniter
 import dateparser
 import pendulum
 from flask import Response
@@ -27,6 +28,7 @@ from airflow_prometheus_exporter.xcom_config import load_xcom_config
 CANARY_DAG = "canary_dag"
 RETENTION_TIME = os.environ.get("PROMETHEUS_METRICS_DAYS", 14)
 TIMEZONE = conf.get("core", "default_timezone")
+TIMEZONE_LA = "America/Los_Angeles"
 MISSING = "missing"
 
 
@@ -385,30 +387,33 @@ def get_num_queued_tasks():
 seconds_per_unit = {
     "s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800
 }
-def convert_to_seconds(s):
-    return int(s[:-1]) * seconds_per_unit[s[-1]] 
+sla_interval_pattern = re.compile("[ ]*([0-9]+).*(s|m|h|d|w)[ ]*")
+def convert_to_seconds(sla_interval):
+    match = re.match(sla_interval_pattern, sla_interval.strip())
+    return int(match.group(1)) * seconds_per_unit[match.group(2)] 
 
 def sla_check(sla_interval, sla_time, max_execution_date, cadence):
-    now = pendulum.now("America/Los_Angeles")
+    now = pendulum.now(TIMEZONE_LA)
     interval_in_second = convert_to_seconds(interval)
 
     if sla_time:
         naive_sla_time = dateparser.parse("today " + sla_time)
-        sla_time = timezone.localize(naive_sla_time)
+        sla_time = pytz.timezone(TIMEZONE_LA).localize(naive_sla_time)
     else:
         # Usually hourly, intraday
         sla_time = now
         
     checkpoint = sla_time.timestamp() - interval_in_second
     if now > sla_time and max_execution_date.timestamp() < checkpoint:
-        return 1
+        return True
         
     checkpoint -= interval_in_second
     if cadence != "triggered" and max_execution_date.timestamp() < checkpoint:
-        # We only check successful runs after sla_time in day for triggered DAGs e.g. PPD
-        return 1
+        # Check for previous successful run if before sla_time in day.
+        # Filter out triggered DAGs e.g. PPD
+        return True
 
-    return 0
+    return False
 
 
 def get_sla_miss_dags():
@@ -465,7 +470,6 @@ def get_sla_miss_dags():
                 or MISSING,
                 "alert_report_classification": dag.alert_report_classification
                 or MISSING,
-                "sla_miss": 0,
                 "severity": dag.severity or MISSING,
                 "group_pagerduty": dag.group_pagerduty or MISSING,
                 "group_business_line": dag.group_business_line or MISSING,
@@ -554,7 +558,6 @@ def get_sla_miss_tasks():
                 or MISSING,
                 "alert_report_classification": task.alert_report_classification
                 or MISSING,
-                "sla_miss": 0,
                 "severity": task.severity or MISSING,
                 "group_pagerduty": task.group_pagerduty or MISSING,
                 "group_business_line": task.group_business_line or MISSING,
