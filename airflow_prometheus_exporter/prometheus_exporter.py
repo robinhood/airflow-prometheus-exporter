@@ -4,7 +4,6 @@ import json
 import os
 import pickle
 import pytz
-import re
 from contextlib import contextmanager
 
 import dateparser
@@ -13,6 +12,7 @@ from flask import Response
 from flask_admin import BaseView, expose
 from prometheus_client import REGISTRY, generate_latest
 from prometheus_client.core import GaugeMetricFamily
+from pytimeparse import parse
 from sqlalchemy import Column, String, and_, func
 from sqlalchemy.ext.declarative import declarative_base
 
@@ -383,15 +383,6 @@ def get_num_queued_tasks():
         )
 
 
-seconds_per_unit = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
-sla_interval_pattern = re.compile("[ ]*([0-9]+).*(s|m|h|d|w)[ ]*")
-
-
-def convert_to_seconds(sla_interval):
-    match = re.match(sla_interval_pattern, sla_interval)
-    return int(match.group(1)) * seconds_per_unit[match.group(2)]
-
-
 def sla_check(sla_interval, sla_time, max_execution_date, cadence, execution_dates):
     utc_datetime = pytz.timezone("UTC").localize(datetime.datetime.utcnow())
     if sla_time:
@@ -404,7 +395,7 @@ def sla_check(sla_interval, sla_time, max_execution_date, cadence, execution_dat
     else:
         sla_datetime = utc_datetime
 
-    interval_in_second = convert_to_seconds(sla_interval)
+    interval_in_second = parse(sla_interval)
     checkpoint = sla_datetime - datetime.timedelta(seconds=interval_in_second)
     if utc_datetime >= sla_datetime and max_execution_date < checkpoint:
         return True
