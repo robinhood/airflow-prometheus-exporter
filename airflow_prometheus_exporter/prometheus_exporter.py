@@ -1,18 +1,19 @@
 """Prometheus exporter for Airflow."""
+import datetime
 import json
 import os
 import pickle
+import pytz
 from contextlib import contextmanager
-from datetime import datetime
 
-import croniter
 import dateparser
 import pendulum
 from flask import Response
 from flask_admin import BaseView, expose
 from prometheus_client import REGISTRY, generate_latest
 from prometheus_client.core import GaugeMetricFamily
-from sqlalchemy import Column, Float, String, and_, func
+from pytimeparse import parse as pytime_parse
+from sqlalchemy import Column, String, and_, func
 from sqlalchemy.ext.declarative import declarative_base
 
 from airflow.configuration import conf
@@ -25,8 +26,9 @@ from airflow.utils.state import State
 from airflow_prometheus_exporter.xcom_config import load_xcom_config
 
 CANARY_DAG = "canary_dag"
-RETENTION_TIME = os.environ.get("PROMETHEUS_METRICS_DAYS", 14)
+RETENTION_TIME = os.environ.get("PROMETHEUS_METRICS_DAYS", 21)
 TIMEZONE = conf.get("core", "default_timezone")
+TIMEZONE_LA = "America/Los_Angeles"
 MISSING = "missing"
 
 
@@ -51,7 +53,7 @@ with session_scope(Session) as session:
         alert_target = Column(String)
         alert_external_classification = Column(String)
         alert_report_classification = Column(String)
-        sla_interval = Column(Float)
+        sla_interval = Column(String)
         sla_time = Column(String)
         group_pagerduty = Column(String)
         group_business_line = Column(String)
@@ -381,23 +383,51 @@ def get_num_queued_tasks():
         )
 
 
+def sla_check(sla_interval, sla_time, max_execution_date, cadence, execution_dates):
+    utc_datetime = pytz.timezone("UTC").localize(datetime.datetime.utcnow())
+    if sla_time:
+        local_datetime = utc_datetime.astimezone(pytz.timezone(TIMEZONE_LA))
+        sla_datetime = pytz.timezone(TIMEZONE_LA).localize(
+            datetime.datetime.combine(
+                local_datetime.date(), datetime.time(int(sla_time))
+            )
+        )
+    else:
+        sla_datetime = utc_datetime
+
+    interval_in_second = pytime_parse(sla_interval)
+    checkpoint = sla_datetime - datetime.timedelta(seconds=interval_in_second)
+    if utc_datetime >= sla_datetime and max_execution_date < checkpoint:
+        return True
+
+    if cadence != "triggered":
+        # Check the state of previous run before sla_time.
+        # To detect consecutive failed scenario.
+        # Filter out triggered DAGs e.g. PPD
+        for record in execution_dates:
+            if record["execution_date"] <= checkpoint:
+                return record["state"] != "success"
+
+    return False
+
+
 def get_sla_miss_dags():
     min_date_to_filter = pendulum.now(TIMEZONE).subtract(days=RETENTION_TIME)
     with session_scope(Session) as session:
-        max_execution_dt_query = (
+        execution_dt_query = (
             session.query(
                 DagRun.dag_id,
                 DagModel.schedule_interval,
-                func.max(DagRun.execution_date).label("max_execution_date"),
+                DagRun.execution_date,
+                DagRun.state,
             )
             .join(DagModel, DagModel.dag_id == DagRun.dag_id)
             .filter(
-                DagModel.is_active == True,  # noqa
+                DagModel.is_active == True,
                 DagModel.is_paused == False,
-                DagRun.state == State.SUCCESS,
                 DagRun.execution_date > min_date_to_filter,
             )
-            .group_by(DagRun.dag_id, DagModel.schedule_interval)
+            .order_by(DagRun.execution_date.desc())
             .subquery()
         )
         dags = (
@@ -405,6 +435,7 @@ def get_sla_miss_dags():
                 DelayAlertMetaData.dag_id,
                 DelayAlertMetaData.sla_interval,
                 DelayAlertMetaData.sla_time,
+                DelayAlertMetaData.cadence,
                 DelayAlertMetaData.severity,
                 DelayAlertMetaData.alert_target,
                 DelayAlertMetaData.alert_external_classification,
@@ -413,12 +444,13 @@ def get_sla_miss_dags():
                 DelayAlertMetaData.group_business_line,
                 DelayAlertMetaData.inhibit_rule,
                 DelayAlertMetaData.latest_successful_run,
-                max_execution_dt_query.c.schedule_interval,
-                max_execution_dt_query.c.max_execution_date,
+                execution_dt_query.c.schedule_interval,
+                execution_dt_query.c.execution_date,
+                execution_dt_query.c.state,
             )
             .join(
-                max_execution_dt_query,
-                DelayAlertMetaData.dag_id == max_execution_dt_query.c.dag_id,
+                execution_dt_query,
+                DelayAlertMetaData.dag_id == execution_dt_query.c.dag_id,
             )
             .filter(
                 DelayAlertMetaData.sla_interval.isnot(None),
@@ -426,104 +458,97 @@ def get_sla_miss_dags():
             )
             .all()
         )
-        sla_miss_dags_metrics = []
-        for dag in dags:
-            dag_metrics = {
-                "dag_id": dag.dag_id,
-                "alert_target": dag.alert_target or MISSING,
-                "alert_external_classification": dag.alert_external_classification
+
+        execution_dates = {}
+        max_execution_dates = {}
+        for run in dags:
+            key = run.dag_id
+            if key not in execution_dates:
+                execution_dates[key] = []
+            if key not in max_execution_dates and run.state == "success":
+                max_execution_dates[key] = run.execution_date
+            execution_dates[key].append(
+                {
+                    "execution_date": run.execution_date,
+                    "state": run.state,
+                }
+            )
+
+        sla_miss_metrics = []
+        processed_runs = set()
+        for run in dags:
+            key = run.dag_id
+            if key in processed_runs or key not in max_execution_dates:
+                continue
+
+            processed_runs.add(key)
+            metrics = {
+                "dag_id": run.dag_id,
+                "alert_target": run.alert_target or MISSING,
+                "alert_external_classification": run.alert_external_classification
                 or MISSING,
-                "alert_report_classification": dag.alert_report_classification
+                "alert_report_classification": run.alert_report_classification
                 or MISSING,
-                "sla_miss": 0,
-                "severity": dag.severity or MISSING,
-                "group_pagerduty": dag.group_pagerduty or MISSING,
-                "group_business_line": dag.group_business_line or MISSING,
-                "inhibit_rule": dag.inhibit_rule or MISSING,
+                "severity": run.severity or MISSING,
+                "group_pagerduty": run.group_pagerduty or MISSING,
+                "group_business_line": run.group_business_line or MISSING,
+                "inhibit_rule": run.inhibit_rule or MISSING,
             }
-            max_execution_date = dag.max_execution_date
+            max_execution_date = max_execution_dates[key]
             if (
-                dag.latest_successful_run is None
-                or max_execution_date > dag.latest_successful_run
+                run.latest_successful_run is None
+                or max_execution_date > run.latest_successful_run
             ):
                 session.query(DelayAlertMetaData).filter(
-                    DelayAlertMetaData.dag_id == dag.dag_id
+                    DelayAlertMetaData.dag_id == run.dag_id
                 ).update({DelayAlertMetaData.latest_successful_run: max_execution_date})
                 session.commit()
             else:
-                max_execution_date = dag.latest_successful_run
+                max_execution_date = run.latest_successful_run
 
-            cron_time = dag.schedule_interval
-            if isinstance(cron_time, str) and croniter.croniter.is_valid(cron_time):
-                cron = croniter.croniter(dag.schedule_interval)
-                expected_last_run = cron.get_prev(datetime)
+            metrics["sla_miss"] = sla_check(
+                run.sla_interval,
+                run.sla_time,
+                max_execution_date,
+                run.cadence,
+                execution_dates[key],
+            )
 
-                diff_from_expected = (
-                    pendulum.instance(expected_last_run)
-                    - pendulum.instance(max_execution_date)
-                ).in_minutes()
-                sla_time = dateparser.parse(
-                    "today " + dag.sla_time,
-                    settings={
-                        "RELATIVE_BASE": expected_last_run,
-                        "TIMEZONE": "America/Los_Angeles",
-                    },
-                )
-            else:
-                sla_time = dateparser.parse("today " + dag.sla_time)
-                expected_last_run = sla_time.replace(
-                    hour=0, minute=0, second=0, microsecond=0
-                )
-                max_execution_date = max_execution_date.replace(
-                    hour=0, minute=0, second=0, microsecond=0
-                )
-                diff_from_expected = (
-                    pendulum.instance(expected_last_run)
-                    - pendulum.instance(max_execution_date)
-                ).in_minutes()
-
-            if pendulum.now("America/Los_Angeles") > sla_time and diff_from_expected > (
-                dag.sla_interval * 24 * 60
-            ):
-                dag_metrics["sla_miss"] = 1
-            elif diff_from_expected > ((dag.sla_interval + 1) * 24 * 60):
-                dag_metrics["sla_miss"] = 1
-            sla_miss_dags_metrics.append(dag_metrics)
-        return sla_miss_dags_metrics
+            sla_miss_metrics.append(metrics)
+        return sla_miss_metrics
 
 
 def get_sla_miss_tasks():
     min_date_to_filter = pendulum.now(TIMEZONE).subtract(days=RETENTION_TIME)
     with session_scope(Session) as session:
-        max_execution_date_query = (
+        execution_dt_query = (
             session.query(
                 TaskInstance.dag_id,
                 TaskInstance.task_id,
                 DagModel.schedule_interval,
-                func.max(TaskInstance.execution_date).label("max_execution_date"),
+                TaskInstance.execution_date,
+                TaskInstance.state,
             )
             .join(DagModel, DagModel.dag_id == TaskInstance.dag_id)
             .filter(
                 DagModel.is_active == True,
                 DagModel.is_paused == False,
-                TaskInstance.state == State.SUCCESS,
                 TaskInstance.execution_date > min_date_to_filter,
             )
-            .group_by(
-                TaskInstance.dag_id, TaskInstance.task_id, DagModel.schedule_interval
-            )
+            .order_by(TaskInstance.execution_date.desc())
             .subquery()
         )
-
         tasks = (
             session.query(
                 DelayAlertMetaData.dag_id,
                 DelayAlertMetaData.task_id,
-                max_execution_date_query.c.max_execution_date,
-                max_execution_date_query.c.schedule_interval,
+                execution_dt_query.c.execution_date,
+                execution_dt_query.c.schedule_interval,
+                execution_dt_query.c.state,
                 DelayAlertMetaData.sla_interval,
                 DelayAlertMetaData.sla_time,
                 DelayAlertMetaData.severity,
+                DelayAlertMetaData.cadence,
                 DelayAlertMetaData.alert_target,
                 DelayAlertMetaData.alert_external_classification,
                 DelayAlertMetaData.alert_report_classification,
@@ -533,80 +558,72 @@ def get_sla_miss_tasks():
                 DelayAlertMetaData.latest_successful_run,
             )
             .join(
-                max_execution_date_query,
+                execution_dt_query,
                 and_(
-                    max_execution_date_query.c.dag_id == DelayAlertMetaData.dag_id,
-                    max_execution_date_query.c.task_id == DelayAlertMetaData.task_id,
+                    execution_dt_query.c.dag_id == DelayAlertMetaData.dag_id,
+                    execution_dt_query.c.task_id == DelayAlertMetaData.task_id,
                 ),
             )
             .filter(DelayAlertMetaData.sla_interval.isnot(None))
             .all()
         )
-        sla_miss_tasks = []
-        for task in tasks:
-            task_metrics = {
-                "dag_id": task.dag_id,
-                "task_id": task.task_id,
-                "alert_target": task.alert_target or MISSING,
-                "alert_external_classification": task.alert_external_classification
+        execution_dates = {}
+        max_execution_dates = {}
+        for run in tasks:
+            key = (run.dag_id, run.task_id)
+            if key not in execution_dates:
+                execution_dates[key] = []
+            if key not in max_execution_dates and run.state == "success":
+                max_execution_dates[key] = run.execution_date
+            execution_dates[key].append(
+                {
+                    "execution_date": run.execution_date,
+                    "state": run.state,
+                }
+            )
+
+        sla_miss_metrics = []
+        processed_runs = set()
+        for run in tasks:
+            key = (run.dag_id, run.task_id)
+            if key in processed_runs or key not in max_execution_dates:
+                continue
+
+            processed_runs.add(key)
+            metrics = {
+                "dag_id": run.dag_id,
+                "alert_target": run.alert_target or MISSING,
+                "alert_external_classification": run.alert_external_classification
                 or MISSING,
-                "alert_report_classification": task.alert_report_classification
+                "alert_report_classification": run.alert_report_classification
                 or MISSING,
-                "sla_miss": 0,
-                "severity": task.severity or MISSING,
-                "group_pagerduty": task.group_pagerduty or MISSING,
-                "group_business_line": task.group_business_line or MISSING,
-                "inhibit_rule": task.inhibit_rule or MISSING,
+                "severity": run.severity or MISSING,
+                "group_pagerduty": run.group_pagerduty or MISSING,
+                "group_business_line": run.group_business_line or MISSING,
+                "inhibit_rule": run.inhibit_rule or MISSING,
             }
-            max_execution_date = task.max_execution_date
+            max_execution_date = max_execution_dates[key]
             if (
-                task.latest_successful_run is None
-                or max_execution_date > task.latest_successful_run
+                run.latest_successful_run is None
+                or max_execution_date > run.latest_successful_run
             ):
                 session.query(DelayAlertMetaData).filter(
-                    DelayAlertMetaData.dag_id == task.dag_id,
-                    DelayAlertMetaData.task_id == task.task_id,
+                    DelayAlertMetaData.dag_id == run.dag_id
                 ).update({DelayAlertMetaData.latest_successful_run: max_execution_date})
                 session.commit()
             else:
-                max_execution_date = task.latest_successful_run
+                max_execution_date = run.latest_successful_run
 
-            cron_time = task.schedule_interval
-            if isinstance(cron_time, str) and croniter.croniter.is_valid(cron_time):
-                cron = croniter.croniter(task.schedule_interval)
-                expected_last_run = cron.get_prev(datetime)
-                diff_from_expected = (
-                    pendulum.instance(expected_last_run)
-                    - pendulum.instance(max_execution_date)
-                ).in_minutes()
-                sla_time = dateparser.parse(
-                    "today " + task.sla_time,
-                    settings={
-                        "RELATIVE_BASE": expected_last_run,
-                        "TIMEZONE": "America/Los_Angeles",
-                    },
-                )
-            else:
-                sla_time = dateparser.parse("today " + task.sla_time)
-                expected_last_run = sla_time.replace(
-                    hour=0, minute=0, second=0, microsecond=0
-                )
-                max_execution_date = task.max_execution_date.replace(
-                    hour=0, minute=0, second=0, microsecond=0
-                )
-                diff_from_expected = (
-                    pendulum.instance(expected_last_run)
-                    - pendulum.instance(max_execution_date)
-                ).in_minutes()
+            metrics["sla_miss"] = sla_check(
+                run.sla_interval,
+                run.sla_time,
+                max_execution_date,
+                run.cadence,
+                execution_dates[key],
+            )
 
-            if pendulum.now("America/Los_Angeles") > sla_time and diff_from_expected > (
-                task.sla_interval * 24 * 60
-            ):
-                task_metrics["sla_miss"] = 1
-            elif diff_from_expected > ((task.sla_interval + 1) * 24 * 60):
-                task_metrics["sla_miss"] = 1
-            sla_miss_tasks.append(task_metrics)
-        return sla_miss_tasks
+            sla_miss_metrics.append(metrics)
+        return sla_miss_metrics
 
 
 class MetricsCollector(object):
