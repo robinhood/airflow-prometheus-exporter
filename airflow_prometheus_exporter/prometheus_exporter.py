@@ -12,7 +12,7 @@ from flask import Response
 from flask_admin import BaseView, expose
 from prometheus_client import REGISTRY, generate_latest
 from prometheus_client.core import GaugeMetricFamily
-from pytimeparse import parse
+from pytimeparse import parse as pytime_parse
 from sqlalchemy import Column, String, and_, func
 from sqlalchemy.ext.declarative import declarative_base
 
@@ -395,7 +395,7 @@ def sla_check(sla_interval, sla_time, max_execution_date, cadence, execution_dat
     else:
         sla_datetime = utc_datetime
 
-    interval_in_second = parse(sla_interval)
+    interval_in_second = pytime_parse(sla_interval)
     checkpoint = sla_datetime - datetime.timedelta(seconds=interval_in_second)
     if utc_datetime >= sla_datetime and max_execution_date < checkpoint:
         return True
@@ -405,11 +405,8 @@ def sla_check(sla_interval, sla_time, max_execution_date, cadence, execution_dat
         # To detect consecutive failed scenario.
         # Filter out triggered DAGs e.g. PPD
         for record in execution_dates:
-            if record["execution_date"] > checkpoint:
-                continue
-            if record["state"] != "success":
-                return True
-            break
+            if record["execution_date"] <= checkpoint:
+                return record["state"] != "success"
 
     return False
 
