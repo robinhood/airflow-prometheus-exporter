@@ -15,13 +15,13 @@ from prometheus_client.core import GaugeMetricFamily
 from pytimeparse import parse as pytime_parse
 from sqlalchemy import Column, String, and_, func
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy_utcdatetime import UTCDateTime
 
 from airflow.configuration import conf
 from airflow.models import DagModel, DagRun, TaskFail, TaskInstance, XCom
 from airflow.plugins_manager import AirflowPlugin
 from airflow.settings import RBAC, Session
 from airflow.utils.log.logging_mixin import LoggingMixin
-from airflow.utils.sqlalchemy import UtcDateTime
 from airflow.utils.state import State
 from airflow_prometheus_exporter.xcom_config import load_xcom_config
 
@@ -46,19 +46,9 @@ with session_scope(Session) as session:
 
     class DelayAlertMetaData(Base):
         __tablename__ = "delay_alert_metadata"
-        dag_id = Column(String, primary_key=True)  # hack to have dag_id as PK
-        task_id = Column(String)
-        cadence = Column(String)
-        severity = Column(String)
-        alert_target = Column(String)
-        alert_external_classification = Column(String)
-        alert_report_classification = Column(String)
-        sla_interval = Column(String)
-        sla_time = Column(String)
-        group_pagerduty = Column(String)
-        group_business_line = Column(String)
-        inhibit_rule = Column(String)
-        latest_successful_run = Column(UtcDateTime)
+        __table_args__ = {"autoload": True}
+        dag_id = Column(String, primary_key=True)
+        latest_successful_run = Column(UTCDateTime)
 
 
 ######################
@@ -389,7 +379,8 @@ def sla_check(sla_interval, sla_time, max_execution_date, cadence, execution_dat
         local_datetime = utc_datetime.astimezone(pytz.timezone(TIMEZONE_LA))
         sla_datetime = pytz.timezone(TIMEZONE_LA).localize(
             datetime.datetime.combine(
-                local_datetime.date(), datetime.time(int(sla_time))
+                local_datetime.date(),
+                datetime.datetime.strptime(sla_time, "%H:%M").time()
             )
         )
     else:
@@ -430,20 +421,21 @@ def get_sla_miss_dags():
             .order_by(DagRun.execution_date.desc())
             .subquery()
         )
-        dags = (
+        runs = (
             session.query(
-                DelayAlertMetaData.dag_id,
-                DelayAlertMetaData.sla_interval,
-                DelayAlertMetaData.sla_time,
-                DelayAlertMetaData.cadence,
-                DelayAlertMetaData.severity,
-                DelayAlertMetaData.alert_target,
                 DelayAlertMetaData.alert_external_classification,
                 DelayAlertMetaData.alert_report_classification,
-                DelayAlertMetaData.group_pagerduty,
+                DelayAlertMetaData.alert_target,
+                DelayAlertMetaData.cadence,
+                DelayAlertMetaData.dag_id,
                 DelayAlertMetaData.group_business_line,
+                DelayAlertMetaData.group_pagerduty,
                 DelayAlertMetaData.inhibit_rule,
                 DelayAlertMetaData.latest_successful_run,
+                DelayAlertMetaData.link,
+                DelayAlertMetaData.severity,
+                DelayAlertMetaData.sla_interval,
+                DelayAlertMetaData.sla_time,
                 execution_dt_query.c.schedule_interval,
                 execution_dt_query.c.execution_date,
                 execution_dt_query.c.state,
@@ -461,7 +453,7 @@ def get_sla_miss_dags():
 
         execution_dates = {}
         max_execution_dates = {}
-        for run in dags:
+        for run in runs:
             key = run.dag_id
             if key not in execution_dates:
                 execution_dates[key] = []
@@ -476,23 +468,24 @@ def get_sla_miss_dags():
 
         sla_miss_metrics = []
         processed_runs = set()
-        for run in dags:
+        for run in runs:
             key = run.dag_id
             if key in processed_runs or key not in max_execution_dates:
                 continue
 
             processed_runs.add(key)
             metrics = {
-                "dag_id": run.dag_id,
-                "alert_target": run.alert_target or MISSING,
                 "alert_external_classification": run.alert_external_classification
                 or MISSING,
                 "alert_report_classification": run.alert_report_classification
                 or MISSING,
-                "severity": run.severity or MISSING,
-                "group_pagerduty": run.group_pagerduty or MISSING,
+                "alert_target": run.alert_target or MISSING,
+                "dag_id": run.dag_id,
                 "group_business_line": run.group_business_line or MISSING,
+                "group_pagerduty": run.group_pagerduty or MISSING,
                 "inhibit_rule": run.inhibit_rule or MISSING,
+                "link": run.link or MISSING,
+                "severity": run.severity or MISSING,
             }
             max_execution_date = max_execution_dates[key]
             if (
@@ -523,11 +516,11 @@ def get_sla_miss_tasks():
     with session_scope(Session) as session:
         execution_dt_query = (
             session.query(
-                TaskInstance.dag_id,
-                TaskInstance.task_id,
                 DagModel.schedule_interval,
+                TaskInstance.dag_id,
                 TaskInstance.execution_date,
                 TaskInstance.state,
+                TaskInstance.task_id,
             )
             .join(DagModel, DagModel.dag_id == TaskInstance.dag_id)
             .filter(
@@ -538,24 +531,25 @@ def get_sla_miss_tasks():
             .order_by(TaskInstance.execution_date.desc())
             .subquery()
         )
-        tasks = (
+        runs = (
             session.query(
+                DelayAlertMetaData.alert_external_classification,
+                DelayAlertMetaData.alert_report_classification,
+                DelayAlertMetaData.alert_target,
+                DelayAlertMetaData.cadence,
                 DelayAlertMetaData.dag_id,
+                DelayAlertMetaData.group_business_line,
+                DelayAlertMetaData.group_pagerduty,
+                DelayAlertMetaData.inhibit_rule,
+                DelayAlertMetaData.latest_successful_run,
+                DelayAlertMetaData.link,
+                DelayAlertMetaData.severity,
+                DelayAlertMetaData.sla_interval,
+                DelayAlertMetaData.sla_time,
                 DelayAlertMetaData.task_id,
                 execution_dt_query.c.execution_date,
                 execution_dt_query.c.schedule_interval,
                 execution_dt_query.c.state,
-                DelayAlertMetaData.sla_interval,
-                DelayAlertMetaData.sla_time,
-                DelayAlertMetaData.severity,
-                DelayAlertMetaData.cadence,
-                DelayAlertMetaData.alert_target,
-                DelayAlertMetaData.alert_external_classification,
-                DelayAlertMetaData.alert_report_classification,
-                DelayAlertMetaData.group_pagerduty,
-                DelayAlertMetaData.group_business_line,
-                DelayAlertMetaData.inhibit_rule,
-                DelayAlertMetaData.latest_successful_run,
             )
             .join(
                 execution_dt_query,
@@ -569,7 +563,7 @@ def get_sla_miss_tasks():
         )
         execution_dates = {}
         max_execution_dates = {}
-        for run in tasks:
+        for run in runs:
             key = (run.dag_id, run.task_id)
             if key not in execution_dates:
                 execution_dates[key] = []
@@ -584,23 +578,25 @@ def get_sla_miss_tasks():
 
         sla_miss_metrics = []
         processed_runs = set()
-        for run in tasks:
+        for run in runs:
             key = (run.dag_id, run.task_id)
             if key in processed_runs or key not in max_execution_dates:
                 continue
 
             processed_runs.add(key)
             metrics = {
-                "dag_id": run.dag_id,
-                "alert_target": run.alert_target or MISSING,
                 "alert_external_classification": run.alert_external_classification
                 or MISSING,
                 "alert_report_classification": run.alert_report_classification
                 or MISSING,
-                "severity": run.severity or MISSING,
-                "group_pagerduty": run.group_pagerduty or MISSING,
+                "alert_target": run.alert_target or MISSING,
+                "dag_id": run.dag_id,
                 "group_business_line": run.group_business_line or MISSING,
+                "group_pagerduty": run.group_pagerduty or MISSING,
                 "inhibit_rule": run.inhibit_rule or MISSING,
+                "link": run.link or MISSING,
+                "severity": run.severity or MISSING,
+                "task_id": run.task_id or MISSING,
             }
             max_execution_date = max_execution_dates[key]
             if (
@@ -807,28 +803,30 @@ class MetricsCollector(object):
             "airflow_dags_sla_miss",
             "Airflow DAGS missing the sla",
             labels=[
-                "dag_id",
-                "alert_target",
                 "alert_external_classification",
                 "alert_report_classification",
-                "severity",
-                "group_pagerduty",
+                "alert_target",
+                "dag_id",
                 "group_business_line",
+                "group_pagerduty",
                 "inhibit_rule",
+                "link",
+                "severity",
             ],
         )
 
         for dag in get_sla_miss_dags():
             sla_miss_dags_metric.add_metric(
                 [
-                    dag["dag_id"],
-                    dag["alert_target"],
                     dag["alert_external_classification"],
                     dag["alert_report_classification"],
-                    dag["severity"],
-                    dag["group_pagerduty"],
+                    dag["alert_target"],
+                    dag["dag_id"],
                     dag["group_business_line"],
+                    dag["group_pagerduty"],
                     dag["inhibit_rule"],
+                    dag["link"],
+                    dag["severity"],
                 ],
                 dag["sla_miss"],
             )
@@ -839,30 +837,32 @@ class MetricsCollector(object):
             "airflow_tasks_sla_miss",
             "Airflow tasks missing the sla",
             labels=[
-                "dag_id",
-                "task_id",
-                "alert_target",
                 "alert_external_classification",
                 "alert_report_classification",
-                "severity",
-                "group_pagerduty",
+                "alert_target",
+                "dag_id",
                 "group_business_line",
+                "group_pagerduty",
                 "inhibit_rule",
+                "link",
+                "severity",
+                "task_id",
             ],
         )
 
         for tasks in get_sla_miss_tasks():
             sla_miss_tasks_metric.add_metric(
                 [
-                    tasks["dag_id"],
-                    tasks["task_id"],
-                    tasks["alert_target"],
                     tasks["alert_external_classification"],
                     tasks["alert_report_classification"],
-                    tasks["severity"],
-                    tasks["group_pagerduty"],
+                    tasks["alert_target"],
+                    tasks["dag_id"],
                     tasks["group_business_line"],
+                    tasks["group_pagerduty"],
                     tasks["inhibit_rule"],
+                    tasks["link"],
+                    tasks["severity"],
+                    tasks["task_id"],
                 ],
                 tasks["sla_miss"],
             )
