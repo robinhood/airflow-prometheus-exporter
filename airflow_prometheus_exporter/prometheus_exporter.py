@@ -423,6 +423,7 @@ def get_sla_miss_dags():
         )
         runs = (
             session.query(
+                DelayAlertMetaData.affected_pipeline,
                 DelayAlertMetaData.alert_external_classification,
                 DelayAlertMetaData.alert_report_classification,
                 DelayAlertMetaData.alert_target,
@@ -475,6 +476,7 @@ def get_sla_miss_dags():
 
             processed_runs.add(key)
             metrics = {
+                "affected_pipeline": run.affected_pipeline or MISSING,
                 "alert_external_classification": run.alert_external_classification
                 or MISSING,
                 "alert_report_classification": run.alert_report_classification
@@ -533,6 +535,7 @@ def get_sla_miss_tasks():
         )
         runs = (
             session.query(
+                DelayAlertMetaData.affected_pipeline,
                 DelayAlertMetaData.alert_external_classification,
                 DelayAlertMetaData.alert_report_classification,
                 DelayAlertMetaData.alert_target,
@@ -585,6 +588,7 @@ def get_sla_miss_tasks():
 
             processed_runs.add(key)
             metrics = {
+                "affected_pipeline": run.affected_pipeline or MISSING,
                 "alert_external_classification": run.alert_external_classification
                 or MISSING,
                 "alert_report_classification": run.alert_report_classification
@@ -803,6 +807,7 @@ class MetricsCollector(object):
             "airflow_dags_sla_miss",
             "Airflow DAGS missing the sla",
             labels=[
+                "affected_pipeline",
                 "alert_external_classification",
                 "alert_report_classification",
                 "alert_target",
@@ -818,6 +823,7 @@ class MetricsCollector(object):
         for dag in get_sla_miss_dags():
             sla_miss_dags_metric.add_metric(
                 [
+                    dag["affected_pipeline"],
                     dag["alert_external_classification"],
                     dag["alert_report_classification"],
                     dag["alert_target"],
@@ -837,6 +843,7 @@ class MetricsCollector(object):
             "airflow_tasks_sla_miss",
             "Airflow tasks missing the sla",
             labels=[
+                "affected_pipeline",
                 "alert_external_classification",
                 "alert_report_classification",
                 "alert_target",
@@ -853,6 +860,7 @@ class MetricsCollector(object):
         for tasks in get_sla_miss_tasks():
             sla_miss_tasks_metric.add_metric(
                 [
+                    tasks["affected_pipeline"],
                     tasks["alert_external_classification"],
                     tasks["alert_report_classification"],
                     tasks["alert_target"],
