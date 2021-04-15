@@ -388,16 +388,17 @@ def sla_check(sla_interval, sla_time, max_execution_date, cadence, execution_dat
 
     interval_in_second = pytime_parse(sla_interval)
     checkpoint = sla_datetime - datetime.timedelta(seconds=interval_in_second)
-    if utc_datetime >= sla_datetime and max_execution_date < checkpoint:
-        return True
+    if utc_datetime >= sla_datetime:
+        if max_execution_date < checkpoint:
+            return True
 
-    if cadence != "triggered":
-        # Check the state of previous run before sla_time.
-        # To detect consecutive failed scenario.
-        # Filter out triggered DAGs e.g. PPD
-        for record in execution_dates:
-            if record["execution_date"] <= checkpoint:
-                return record["state"] != "success"
+        if cadence != "triggered":
+            # Check the state of previous run before sla_time.
+            # To detect consecutive failed scenario.
+            # Filter out triggered DAGs e.g. PPD
+            for record in execution_dates:
+                if record["execution_date"] <= checkpoint:
+                    return record["state"] != "success"
 
     return False
 
