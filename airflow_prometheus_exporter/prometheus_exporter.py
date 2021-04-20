@@ -376,28 +376,30 @@ def get_num_queued_tasks():
 def sla_check(sla_interval, sla_time, max_execution_date, cadence, execution_dates):
     utc_datetime = pytz.timezone("UTC").localize(datetime.datetime.utcnow())
     if sla_time:
+        # Convert user defined SLA time to local datetime.
         local_datetime = utc_datetime.astimezone(pytz.timezone(TIMEZONE_LA))
         sla_datetime = pytz.timezone(TIMEZONE_LA).localize(
             datetime.datetime.combine(
                 local_datetime.date(),
-                datetime.datetime.strptime(sla_time, "%H:%M").time()
+                datetime.datetime.strptime(sla_time, "%H:%M").time(),
             )
         )
     else:
+        # If no defined SLA time, meaning we check SLA miss every time.
         sla_datetime = utc_datetime
 
     interval_in_second = pytime_parse(sla_interval)
     checkpoint = sla_datetime - datetime.timedelta(seconds=interval_in_second)
-    if utc_datetime >= sla_datetime and max_execution_date < checkpoint:
-        return True
 
+    # Check SLA miss when it's SLA time.
+    if utc_datetime >= sla_datetime:
+        return max_execution_date < checkpoint
+
+    # Check SLA miss when it's before SLA time to see the state of previous run.
     if cadence != "triggered":
-        # Check the state of previous run before sla_time.
-        # To detect consecutive failed scenario.
-        # Filter out triggered DAGs e.g. PPD
         for record in execution_dates:
             if record["execution_date"] <= checkpoint:
-                return record["state"] != "success"
+                return record["execution_date"] > max_execution_date
 
     return False
 
