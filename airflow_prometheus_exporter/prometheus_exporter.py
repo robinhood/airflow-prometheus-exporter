@@ -519,7 +519,7 @@ def get_sla_miss_dags():
                 "inhibit_rule": run.inhibit_rule or MISSING,
                 "link": run.link or MISSING,
                 "severity": run.severity or MISSING,
-                "sla_miss": = sla_check(
+                "sla_miss": sla_check(
                     run.sla_interval,
                     run.sla_time,
                     max_execution_date,
