@@ -448,11 +448,8 @@ def get_sla_miss_dags():
                 execution_dates[key] = []
             execution_dates[key].append(r.execution_date)
 
-            if r.state == "success":
-                if key in max_execution_dates :
-                    max_execution_dates[key] = max(r.execution_date, max_execution_dates[key])
-                else:
-                    max_execution_dates[key] = r.execution_date
+            if r.state == "success" and key not in max_execution_dates :
+                max_execution_dates[key] = r.execution_date
 
         runs = (
             session.query(
@@ -496,14 +493,15 @@ def get_sla_miss_dags():
                     dag_id=run.dag_id,
                     execution_date=max_execution_date,
                 ))
+                session.flush()
             elif max_execution_date > run.latest_successful_run:
                 session.query(LatestSuccessfulRun).filter(
                     LatestSuccessfulRun.dag_id == run.dag_id,
                     LatestSuccessfulRun.task_id.is_(None),
                 ).update({LatestSuccessfulRun.execution_date: max_execution_date})
+                session.flush()
             else:
                 max_execution_date = run.latest_successful_run
-            session.flush()
 
             metrics.append({
                 "affected_pipeline": run.affected_pipeline or MISSING,
@@ -578,11 +576,8 @@ def get_sla_miss_tasks():
                 execution_dates[key] = []
             execution_dates[key].append(r.execution_date)
 
-            if r.state == "success":
-                if key in max_execution_dates :
-                    max_execution_dates[key] = max(r.execution_date, max_execution_dates[key])
-                else:
-                    max_execution_dates[key] = r.execution_date
+            if r.state == "success" and key not in max_execution_dates :
+                max_execution_dates[key] = r.execution_date
 
         runs = (
             session.query(
@@ -634,14 +629,15 @@ def get_sla_miss_tasks():
                     task_id=run.task_id,
                     execution_date=max_execution_date,
                 ))
+                session.flush()
             elif max_execution_date > run.latest_successful_run:
                 session.query(LatestSuccessfulRun).filter(
                     LatestSuccessfulRun.dag_id == run.dag_id,
                     LatestSuccessfulRun.task_id == run.task_id,
                 ).update({LatestSuccessfulRun.execution_date: max_execution_date})
+                session.flush()
             else:
                 max_execution_date = run.latest_successful_run
-            session.flush()
 
             metrics.append({
                 "affected_pipeline": run.affected_pipeline or MISSING,
