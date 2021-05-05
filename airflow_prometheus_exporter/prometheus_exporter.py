@@ -518,7 +518,7 @@ def get_sla_miss_dags():
 
             max_execution_date = max_execution_dates.get(
                 key,
-                datetime.datetime(2020, 1, 1)
+                datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc)
             )
             if run.latest_successful_run is None:
                 insert_dict[(run.dag_id, None)] = max_execution_date
@@ -652,7 +652,7 @@ def get_sla_miss_tasks():
 
             max_execution_date = max_execution_dates.get(
                 key,
-                datetime.datetime(2020, 1, 1)
+                datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc)
             )
             if max_execution_date is None:
                 continue
