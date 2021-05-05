@@ -515,7 +515,6 @@ def get_sla_miss_dags():
         update_dict = {}
         for run in runs:
             key = run.dag_id
-            logger.info(run)
 
             max_execution_date = max_execution_dates.get(key)
             if run.latest_successful_run is None and max_execution_date:
