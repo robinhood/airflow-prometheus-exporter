@@ -54,6 +54,7 @@ with session_scope(Session) as session:
         __tablename__ = "ddns_latest_successful_run"
         __table_args__ = {"autoload": True}
         dag_id = Column(String, primary_key=True)
+        task_id = Column(String, primary_key=True, nullable=True)
         execution_date = Column(UTCDateTime)
 
 ######################
