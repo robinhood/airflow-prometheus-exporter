@@ -579,7 +579,7 @@ def get_sla_miss_tasks():
                 TaskInstance.task_id,
             )
             .join(
-                active_dag_query,
+                active_task_query,
                 and_(
                     active_task_query.c.dag_id == TaskInstance.dag_id,
                     active_task_query.c.task_id == TaskInstance.task_id,
@@ -622,10 +622,10 @@ def get_sla_miss_tasks():
                 LatestSuccessfulRun.execution_date.label("latest_successful_run"),
             )
             .join(
-                active_dag_query,
+                active_task_query,
                 and_(
-                    DelayAlertMetaData.dag_id == active_dag_query.c.dag_id,
-                    DelayAlertMetaData.task_id == active_dag_query.c.task_id,
+                    DelayAlertMetaData.dag_id == active_task_query.c.dag_id,
+                    DelayAlertMetaData.task_id == active_task_query.c.task_id,
                 )
             )
             .join(
