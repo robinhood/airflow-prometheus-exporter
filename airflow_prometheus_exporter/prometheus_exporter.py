@@ -516,8 +516,11 @@ def get_sla_miss_dags():
         for run in runs:
             key = run.dag_id
 
-            max_execution_date = max_execution_dates.get(key)
-            if run.latest_successful_run is None and max_execution_date:
+            max_execution_date = max_execution_dates.get(
+                key,
+                datetime.datetime(2020, 1, 1)
+            )
+            if run.latest_successful_run is None:
                 insert_dict[(run.dag_id, None)] = max_execution_date
             elif max_execution_date > run.latest_successful_run:
                 update_dict[(run.dag_id, None)] = max_execution_date
@@ -647,8 +650,13 @@ def get_sla_miss_tasks():
         for run in runs:
             key = (run.dag_id, run.task_id)
 
-            max_execution_date = max_execution_dates.get(key)
-            if run.latest_successful_run is None and max_execution_date:
+            max_execution_date = max_execution_dates.get(
+                key,
+                datetime.datetime(2020, 1, 1)
+            )
+            if max_execution_date is None:
+                continue
+            elif run.latest_successful_run is None and max_execution_date:
                 insert_dict[(run.dag_id, run.task_id)] = max_execution_date
             elif max_execution_date > run.latest_successful_run:
                 update_dict[(run.dag_id, run.task_id)] = max_execution_date
