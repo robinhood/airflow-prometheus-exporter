@@ -377,6 +377,32 @@ def get_num_queued_tasks():
             .count()
         )
 
+def insert_latest_successful_run(insert_dict):
+    for key, execution_date in insert_dict.items():
+        dag_id, task_id = key
+        session.add(LatestSuccessfulRun(
+            dag_id=dag_id,
+            task_id=task_id,
+            execution_date=execution_date,
+        ))
+    session.flush()
+    session.commit()
+
+def update_latest_successful_run(update_dict):
+    for key, execution_date in update_dict.items():
+        dag_id, task_id = key
+        if task_id is None:
+            session.query(LatestSuccessfulRun).filter(
+                LatestSuccessfulRun.dag_id == dag_id,
+                LatestSuccessfulRun.task_id.is_(None),
+            ).update({LatestSuccessfulRun.execution_date: execution_date})
+        else:
+            session.query(LatestSuccessfulRun).filter(
+                LatestSuccessfulRun.dag_id == dag_id,
+                LatestSuccessfulRun.task_id == task_id,
+            ).update({LatestSuccessfulRun.execution_date: execution_date})
+    session.flush()
+    session.commit()
 
 def sla_check(sla_interval, sla_time, max_execution_date, cadence, execution_dates):
     utc_datetime = pytz.timezone("UTC").localize(datetime.datetime.utcnow())
@@ -484,22 +510,17 @@ def get_sla_miss_dags():
         )
 
         metrics = []
+        insert_dict = {}
+        update_dict = {}
         for run in runs:
             key = run.dag_id
+            logger.info(run)
 
             max_execution_date = max_execution_dates.get(key)
             if run.latest_successful_run is None and max_execution_date:
-                session.add(LatestSuccessfulRun(
-                    dag_id=run.dag_id,
-                    execution_date=max_execution_date,
-                ))
-                session.flush()
+                insert_dict[(run.dag_id, None)] = max_execution_date
             elif max_execution_date > run.latest_successful_run:
-                session.query(LatestSuccessfulRun).filter(
-                    LatestSuccessfulRun.dag_id == run.dag_id,
-                    LatestSuccessfulRun.task_id.is_(None),
-                ).update({LatestSuccessfulRun.execution_date: max_execution_date})
-                session.flush()
+                update_dict[(run.dag_id, None)] = max_execution_date
             else:
                 max_execution_date = run.latest_successful_run
 
@@ -525,7 +546,9 @@ def get_sla_miss_dags():
                 ),
             })
 
-        session.commit()
+        insert_latest_successful_run(insert_dict)
+        update_latest_successful_run(update_dict)
+
         return metrics
 
 
@@ -619,23 +642,16 @@ def get_sla_miss_tasks():
         )
 
         metrics = []
+        insert_dict = {}
+        update_dict = {}
         for run in runs:
             key = (run.dag_id, run.task_id)
 
             max_execution_date = max_execution_dates.get(key)
             if run.latest_successful_run is None and max_execution_date:
-                session.add(LatestSuccessfulRun(
-                    dag_id=run.dag_id,
-                    task_id=run.task_id,
-                    execution_date=max_execution_date,
-                ))
-                session.flush()
+                insert_dict[(run.dag_id, run.task_id)] = max_execution_date
             elif max_execution_date > run.latest_successful_run:
-                session.query(LatestSuccessfulRun).filter(
-                    LatestSuccessfulRun.dag_id == run.dag_id,
-                    LatestSuccessfulRun.task_id == run.task_id,
-                ).update({LatestSuccessfulRun.execution_date: max_execution_date})
-                session.flush()
+                update_dict[(run.dag_id, run.task_id)] = max_execution_date
             else:
                 max_execution_date = run.latest_successful_run
 
@@ -662,7 +678,9 @@ def get_sla_miss_tasks():
                 )
             })
 
-        session.commit()
+        insert_latest_successful_run(insert_dict)
+        update_latest_successful_run(update_dict)
+
         return metrics
 
 
