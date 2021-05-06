@@ -379,7 +379,7 @@ def get_num_queued_tasks():
             .count()
         )
 
-def insert_latest_successful_run(insert_dict):
+def insert_latest_successful_run(session, insert_dict):
     for key, execution_date in insert_dict.items():
         dag_id, task_id = key
         session.add(LatestSuccessfulRun(
@@ -390,7 +390,7 @@ def insert_latest_successful_run(insert_dict):
     session.flush()
     session.commit()
 
-def update_latest_successful_run(update_dict):
+def update_latest_successful_run(session, update_dict):
     for key, execution_date in update_dict.items():
         dag_id, task_id = key
         if task_id is None:
@@ -546,8 +546,8 @@ def get_sla_miss_dags():
                 ),
             })
 
-        insert_latest_successful_run(insert_dict)
-        update_latest_successful_run(update_dict)
+        insert_latest_successful_run(session, insert_dict)
+        update_latest_successful_run(session, update_dict)
 
         return metrics
 
@@ -679,8 +679,8 @@ def get_sla_miss_tasks():
                 )
             })
 
-        insert_latest_successful_run(insert_dict)
-        update_latest_successful_run(update_dict)
+        insert_latest_successful_run(session, insert_dict)
+        update_latest_successful_run(session, update_dict)
 
         return metrics
 
