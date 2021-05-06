@@ -469,10 +469,10 @@ def get_sla_miss_dags():
         )
 
         execution_dates = defaultdict(list)
-        max_execution_dates = defaultdict(list)
+        max_execution_dates = {}
         for r in execution_date_query:
             execution_dates[r.dag_id].append(r.execution_date)
-            if r.state == "success":
+            if r.state == "success" and key not in max_execution_dates:
                 max_execution_dates[key] = r.execution_date
 
         runs = (
@@ -592,10 +592,10 @@ def get_sla_miss_tasks():
         )
 
         execution_dates = defaultdict(list)
-        max_execution_dates = defaultdict(list)
+        max_execution_dates = {}
         for r in execution_date_query:
             execution_dates[r.dag_id].append(r.execution_date)
-            if r.state == "success":
+            if r.state == "success" and key not in max_execution_dates:
                 max_execution_dates[key] = r.execution_date
 
         runs = (
