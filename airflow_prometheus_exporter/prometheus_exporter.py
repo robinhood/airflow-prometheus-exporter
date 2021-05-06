@@ -4,6 +4,7 @@ import json
 import os
 import pickle
 import pytz
+from collections import defaultdict
 from contextlib import contextmanager
 
 import dateparser
@@ -467,15 +468,11 @@ def get_sla_miss_dags():
             .all()
         )
 
-        execution_dates = {}
-        max_execution_dates = {}
+        execution_dates = defaultdict(list)
+        max_execution_dates = defaultdict(list)
         for r in execution_date_query:
-            key = r.dag_id
-            if key not in execution_dates:
-                execution_dates[key] = []
-            execution_dates[key].append(r.execution_date)
-
-            if r.state == "success" and key not in max_execution_dates :
+            execution_dates[r.dag_id].append(r.execution_date)
+            if r.state == "success":
                 max_execution_dates[key] = r.execution_date
 
         runs = (
@@ -594,15 +591,11 @@ def get_sla_miss_tasks():
             .all()
         )
 
-        execution_dates = {}
-        max_execution_dates = {}
+        execution_dates = defaultdict(list)
+        max_execution_dates = defaultdict(list)
         for r in execution_date_query:
-            key = (r.dag_id, r.task_id)
-            if key not in execution_dates:
-                execution_dates[key] = []
-            execution_dates[key].append(r.execution_date)
-
-            if r.state == "success" and key not in max_execution_dates :
+            execution_dates[r.dag_id].append(r.execution_date)
+            if r.state == "success":
                 max_execution_dates[key] = r.execution_date
 
         runs = (
