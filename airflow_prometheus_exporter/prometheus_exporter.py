@@ -42,20 +42,21 @@ def session_scope(session):
         session.close()
 
 
-Base = declarative_base()
+with session_scope(Session) as session:
+    Base = declarative_base(session.get_bind())
 
-class DelayAlertMetaData(Base):
-    __tablename__ = "delay_alert_metadata"
-    __table_args__ = {"autoload": True}
-    dag_id = Column(String, primary_key=True)
-    latest_successful_run = Column(UTCDateTime)
+    class DelayAlertMetaData(Base):
+        __tablename__ = "delay_alert_metadata"
+        __table_args__ = {"autoload": True}
+        dag_id = Column(String, primary_key=True)
+        latest_successful_run = Column(UTCDateTime)
 
-class LatestSuccessfulRun(Base):
-    __tablename__ = "ddns_latest_successful_run"
-    __table_args__ = {"autoload": True}
-    dag_id = Column(String, primary_key=True)
-    task_id = Column(String, primary_key=True, nullable=True)
-    execution_date = Column(UTCDateTime)
+    class LatestSuccessfulRun(Base):
+        __tablename__ = "ddns_latest_successful_run"
+        __table_args__ = {"autoload": True}
+        dag_id = Column(String, primary_key=True)
+        task_id = Column(String, primary_key=True, nullable=True)
+        execution_date = Column(UTCDateTime)
 
 ######################
 # DAG Related Metrics
