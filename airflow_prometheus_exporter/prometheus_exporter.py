@@ -42,21 +42,20 @@ def session_scope(session):
         session.close()
 
 
-with session_scope(Session) as session:
-    Base = declarative_base(session.get_bind())
+Base = declarative_base()
 
-    class DelayAlertMetaData(Base):
-        __tablename__ = "delay_alert_metadata"
-        __table_args__ = {"autoload": True}
-        dag_id = Column(String, primary_key=True)
-        latest_successful_run = Column(UTCDateTime)
+class DelayAlertMetaData(Base):
+    __tablename__ = "delay_alert_metadata"
+    __table_args__ = {"autoload": True}
+    dag_id = Column(String, primary_key=True)
+    latest_successful_run = Column(UTCDateTime)
 
-    class LatestSuccessfulRun(Base):
-        __tablename__ = "ddns_latest_successful_run"
-        __table_args__ = {"autoload": True}
-        dag_id = Column(String, primary_key=True)
-        task_id = Column(String, primary_key=True, nullable=True)
-        execution_date = Column(UTCDateTime)
+class LatestSuccessfulRun(Base):
+    __tablename__ = "ddns_latest_successful_run"
+    __table_args__ = {"autoload": True}
+    dag_id = Column(String, primary_key=True)
+    task_id = Column(String, primary_key=True, nullable=True)
+    execution_date = Column(UTCDateTime)
 
 ######################
 # DAG Related Metrics
@@ -379,7 +378,7 @@ def get_num_queued_tasks():
             .count()
         )
 
-def insert_latest_successful_run(session, insert_dict):
+def insert_latest_successful_runs(session, insert_dict):
     for key, execution_date in insert_dict.items():
         dag_id, task_id = key
         session.add(LatestSuccessfulRun(
@@ -390,7 +389,7 @@ def insert_latest_successful_run(session, insert_dict):
     session.flush()
     session.commit()
 
-def update_latest_successful_run(session, update_dict):
+def update_latest_successful_runs(session, update_dict):
     for key, execution_date in update_dict.items():
         dag_id, task_id = key
         if task_id is None:
@@ -547,8 +546,8 @@ def get_sla_miss_dags():
                 ),
             })
 
-        insert_latest_successful_run(session, insert_dict)
-        update_latest_successful_run(session, update_dict)
+        insert_latest_successful_runs(session, insert_dict)
+        update_latest_successful_runs(session, update_dict)
 
         return metrics
 
@@ -681,8 +680,8 @@ def get_sla_miss_tasks():
                 )
             })
 
-        insert_latest_successful_run(session, insert_dict)
-        update_latest_successful_run(session, update_dict)
+        insert_latest_successful_runs(session, insert_dict)
+        update_latest_successful_runs(session, update_dict)
 
         return metrics
 
