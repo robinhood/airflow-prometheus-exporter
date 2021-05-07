@@ -4,6 +4,7 @@ import json
 import os
 import pickle
 import pytz
+from collections import defaultdict
 from contextlib import contextmanager
 
 import dateparser
@@ -50,6 +51,12 @@ with session_scope(Session) as session:
         dag_id = Column(String, primary_key=True)
         latest_successful_run = Column(UTCDateTime)
 
+    class LatestSuccessfulRun(Base):
+        __tablename__ = "ddns_latest_successful_run"
+        __table_args__ = {"autoload": True}
+        dag_id = Column(String, primary_key=True)
+        task_id = Column(String, primary_key=True, nullable=True)
+        execution_date = Column(UTCDateTime)
 
 ######################
 # DAG Related Metrics
@@ -372,6 +379,32 @@ def get_num_queued_tasks():
             .count()
         )
 
+def insert_latest_successful_runs(session, insert_dict):
+    for key, execution_date in insert_dict.items():
+        dag_id, task_id = key
+        session.add(LatestSuccessfulRun(
+            dag_id=dag_id,
+            task_id=task_id,
+            execution_date=execution_date,
+        ))
+    session.flush()
+    session.commit()
+
+def update_latest_successful_runs(session, update_dict):
+    for key, execution_date in update_dict.items():
+        dag_id, task_id = key
+        if task_id is None:
+            session.query(LatestSuccessfulRun).filter(
+                LatestSuccessfulRun.dag_id == dag_id,
+                LatestSuccessfulRun.task_id.is_(None),
+            ).update({LatestSuccessfulRun.execution_date: execution_date})
+        else:
+            session.query(LatestSuccessfulRun).filter(
+                LatestSuccessfulRun.dag_id == dag_id,
+                LatestSuccessfulRun.task_id == task_id,
+            ).update({LatestSuccessfulRun.execution_date: execution_date})
+    session.flush()
+    session.commit()
 
 def sla_check(sla_interval, sla_time, max_execution_date, cadence, execution_dates):
     utc_datetime = pytz.timezone("UTC").localize(datetime.datetime.utcnow())
@@ -407,22 +440,42 @@ def sla_check(sla_interval, sla_time, max_execution_date, cadence, execution_dat
 def get_sla_miss_dags():
     min_date_to_filter = pendulum.now(TIMEZONE).subtract(days=RETENTION_TIME)
     with session_scope(Session) as session:
-        execution_dt_query = (
+        active_dag_query = (
+            session.query(
+                DelayAlertMetaData.dag_id
+            )
+            .join(DagModel, DelayAlertMetaData.dag_id == DagModel.dag_id)
+            .filter(
+                DelayAlertMetaData.task_id.is_(None),
+                DagModel.is_active == True,
+                DagModel.is_paused == False,
+            )
+            .group_by(DelayAlertMetaData.dag_id)
+            .subquery()
+        )
+
+        execution_date_query = (
             session.query(
                 DagRun.dag_id,
-                DagModel.schedule_interval,
                 DagRun.execution_date,
                 DagRun.state,
             )
-            .join(DagModel, DagModel.dag_id == DagRun.dag_id)
+            .join(active_dag_query, active_dag_query.c.dag_id == DagRun.dag_id)
             .filter(
-                DagModel.is_active == True,
-                DagModel.is_paused == False,
                 DagRun.execution_date > min_date_to_filter,
             )
             .order_by(DagRun.execution_date.desc())
-            .subquery()
+            .all()
         )
+
+        execution_dates = defaultdict(list)
+        max_execution_dates = {}
+        for r in execution_date_query:
+            key = r.dag_id
+            execution_dates[key].append(r.execution_date)
+            if r.state == "success" and key not in max_execution_dates:
+                max_execution_dates[r.dag_id] = r.execution_date
+
         runs = (
             session.query(
                 DelayAlertMetaData.affected_pipeline,
@@ -434,50 +487,45 @@ def get_sla_miss_dags():
                 DelayAlertMetaData.group_business_line,
                 DelayAlertMetaData.group_pagerduty,
                 DelayAlertMetaData.inhibit_rule,
-                DelayAlertMetaData.latest_successful_run,
                 DelayAlertMetaData.link,
                 DelayAlertMetaData.severity,
                 DelayAlertMetaData.sla_interval,
                 DelayAlertMetaData.sla_time,
-                execution_dt_query.c.schedule_interval,
-                execution_dt_query.c.execution_date,
-                execution_dt_query.c.state,
+                LatestSuccessfulRun.execution_date.label("latest_successful_run"),
             )
+            .join(active_dag_query, DelayAlertMetaData.dag_id == active_dag_query.c.dag_id)
             .join(
-                execution_dt_query,
-                DelayAlertMetaData.dag_id == execution_dt_query.c.dag_id,
+                LatestSuccessfulRun,
+                and_(
+                    DelayAlertMetaData.dag_id == LatestSuccessfulRun.dag_id,
+                    LatestSuccessfulRun.task_id.is_(None),
+                ),
+                isouter=True
             )
             .filter(
-                DelayAlertMetaData.sla_interval.isnot(None),
                 DelayAlertMetaData.task_id.is_(None),
             )
             .all()
         )
 
-        execution_dates = {}
-        max_execution_dates = {}
+        metrics = []
+        insert_dict = {}
+        update_dict = {}
         for run in runs:
             key = run.dag_id
-            if key not in execution_dates:
-                execution_dates[key] = []
-            if key not in max_execution_dates and run.state == "success":
-                max_execution_dates[key] = run.execution_date
-            execution_dates[key].append(
-                {
-                    "execution_date": run.execution_date,
-                    "state": run.state,
-                }
+
+            max_execution_date = max_execution_dates.get(
+                key,
+                datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc)
             )
+            if run.latest_successful_run is None:
+                insert_dict[(run.dag_id, None)] = max_execution_date
+            elif max_execution_date > run.latest_successful_run:
+                update_dict[(run.dag_id, None)] = max_execution_date
+            else:
+                max_execution_date = run.latest_successful_run
 
-        sla_miss_metrics = []
-        processed_runs = set()
-        for run in runs:
-            key = run.dag_id
-            if key in processed_runs or key not in max_execution_dates:
-                continue
-
-            processed_runs.add(key)
-            metrics = {
+            metrics.append({
                 "affected_pipeline": run.affected_pipeline or MISSING,
                 "alert_external_classification": run.alert_external_classification
                 or MISSING,
@@ -490,51 +538,68 @@ def get_sla_miss_dags():
                 "inhibit_rule": run.inhibit_rule or MISSING,
                 "link": run.link or MISSING,
                 "severity": run.severity or MISSING,
-            }
-            max_execution_date = max_execution_dates[key]
-            if (
-                run.latest_successful_run is None
-                or max_execution_date > run.latest_successful_run
-            ):
-                session.query(DelayAlertMetaData).filter(
-                    DelayAlertMetaData.dag_id == run.dag_id
-                ).update({DelayAlertMetaData.latest_successful_run: max_execution_date})
-                session.commit()
-            else:
-                max_execution_date = run.latest_successful_run
+                "sla_miss": sla_check(
+                    run.sla_interval,
+                    run.sla_time,
+                    max_execution_date,
+                    run.cadence,
+                    execution_dates[key],
+                ),
+            })
 
-            metrics["sla_miss"] = sla_check(
-                run.sla_interval,
-                run.sla_time,
-                max_execution_date,
-                run.cadence,
-                execution_dates[key],
-            )
+        insert_latest_successful_runs(session, insert_dict)
+        update_latest_successful_runs(session, update_dict)
 
-            sla_miss_metrics.append(metrics)
-        return sla_miss_metrics
+        return metrics
 
 
 def get_sla_miss_tasks():
     min_date_to_filter = pendulum.now(TIMEZONE).subtract(days=RETENTION_TIME)
     with session_scope(Session) as session:
-        execution_dt_query = (
+        active_task_query = (
             session.query(
-                DagModel.schedule_interval,
+                DelayAlertMetaData.dag_id,
+                DelayAlertMetaData.task_id,
+            )
+            .join(DagModel, DelayAlertMetaData.dag_id == DagModel.dag_id)
+            .filter(
+                DelayAlertMetaData.task_id.isnot(None),
+                DagModel.is_active == True,
+                DagModel.is_paused == False,
+            )
+            .group_by(DelayAlertMetaData.dag_id, DelayAlertMetaData.task_id)
+            .subquery()
+        )
+
+        execution_date_query = (
+            session.query(
                 TaskInstance.dag_id,
                 TaskInstance.execution_date,
                 TaskInstance.state,
                 TaskInstance.task_id,
             )
-            .join(DagModel, DagModel.dag_id == TaskInstance.dag_id)
+            .join(
+                active_task_query,
+                and_(
+                    active_task_query.c.dag_id == TaskInstance.dag_id,
+                    active_task_query.c.task_id == TaskInstance.task_id,
+                ),
+            )
             .filter(
-                DagModel.is_active == True,
-                DagModel.is_paused == False,
                 TaskInstance.execution_date > min_date_to_filter,
             )
             .order_by(TaskInstance.execution_date.desc())
-            .subquery()
+            .all()
         )
+
+        execution_dates = defaultdict(list)
+        max_execution_dates = {}
+        for r in execution_date_query:
+            key = (r.dag_id, r.task_id)
+            execution_dates[key].append(r.execution_date)
+            if r.state == "success" and key not in max_execution_dates:
+                max_execution_dates[key] = r.execution_date
+
         runs = (
             session.query(
                 DelayAlertMetaData.affected_pipeline,
@@ -546,50 +611,54 @@ def get_sla_miss_tasks():
                 DelayAlertMetaData.group_business_line,
                 DelayAlertMetaData.group_pagerduty,
                 DelayAlertMetaData.inhibit_rule,
-                DelayAlertMetaData.latest_successful_run,
                 DelayAlertMetaData.link,
                 DelayAlertMetaData.severity,
                 DelayAlertMetaData.sla_interval,
                 DelayAlertMetaData.sla_time,
                 DelayAlertMetaData.task_id,
-                execution_dt_query.c.execution_date,
-                execution_dt_query.c.schedule_interval,
-                execution_dt_query.c.state,
+                LatestSuccessfulRun.execution_date.label("latest_successful_run"),
             )
             .join(
-                execution_dt_query,
+                active_task_query,
                 and_(
-                    execution_dt_query.c.dag_id == DelayAlertMetaData.dag_id,
-                    execution_dt_query.c.task_id == DelayAlertMetaData.task_id,
-                ),
+                    DelayAlertMetaData.dag_id == active_task_query.c.dag_id,
+                    DelayAlertMetaData.task_id == active_task_query.c.task_id,
+                )
             )
-            .filter(DelayAlertMetaData.sla_interval.isnot(None))
+            .join(
+                LatestSuccessfulRun,
+                and_(
+                    DelayAlertMetaData.dag_id == LatestSuccessfulRun.dag_id,
+                    DelayAlertMetaData.task_id == LatestSuccessfulRun.task_id,
+                ),
+                isouter=True
+            )
+            .filter(
+                DelayAlertMetaData.task_id.isnot(None),
+            )
             .all()
         )
-        execution_dates = {}
-        max_execution_dates = {}
+
+        metrics = []
+        insert_dict = {}
+        update_dict = {}
         for run in runs:
             key = (run.dag_id, run.task_id)
-            if key not in execution_dates:
-                execution_dates[key] = []
-            if key not in max_execution_dates and run.state == "success":
-                max_execution_dates[key] = run.execution_date
-            execution_dates[key].append(
-                {
-                    "execution_date": run.execution_date,
-                    "state": run.state,
-                }
+
+            max_execution_date = max_execution_dates.get(
+                key,
+                datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc)
             )
-
-        sla_miss_metrics = []
-        processed_runs = set()
-        for run in runs:
-            key = (run.dag_id, run.task_id)
-            if key in processed_runs or key not in max_execution_dates:
+            if max_execution_date is None:
                 continue
+            elif run.latest_successful_run is None and max_execution_date:
+                insert_dict[(run.dag_id, run.task_id)] = max_execution_date
+            elif max_execution_date > run.latest_successful_run:
+                update_dict[(run.dag_id, run.task_id)] = max_execution_date
+            else:
+                max_execution_date = run.latest_successful_run
 
-            processed_runs.add(key)
-            metrics = {
+            metrics.append({
                 "affected_pipeline": run.affected_pipeline or MISSING,
                 "alert_external_classification": run.alert_external_classification
                 or MISSING,
@@ -603,29 +672,19 @@ def get_sla_miss_tasks():
                 "link": run.link or MISSING,
                 "severity": run.severity or MISSING,
                 "task_id": run.task_id or MISSING,
-            }
-            max_execution_date = max_execution_dates[key]
-            if (
-                run.latest_successful_run is None
-                or max_execution_date > run.latest_successful_run
-            ):
-                session.query(DelayAlertMetaData).filter(
-                    DelayAlertMetaData.dag_id == run.dag_id
-                ).update({DelayAlertMetaData.latest_successful_run: max_execution_date})
-                session.commit()
-            else:
-                max_execution_date = run.latest_successful_run
+                "sla_miss": sla_check(
+                    run.sla_interval,
+                    run.sla_time,
+                    max_execution_date,
+                    run.cadence,
+                    execution_dates[key],
+                )
+            })
 
-            metrics["sla_miss"] = sla_check(
-                run.sla_interval,
-                run.sla_time,
-                max_execution_date,
-                run.cadence,
-                execution_dates[key],
-            )
+        insert_latest_successful_runs(session, insert_dict)
+        update_latest_successful_runs(session, update_dict)
 
-            sla_miss_metrics.append(metrics)
-        return sla_miss_metrics
+        return metrics
 
 
 class MetricsCollector(object):
