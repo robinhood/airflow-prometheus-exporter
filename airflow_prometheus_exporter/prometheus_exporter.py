@@ -431,8 +431,8 @@ def sla_check(sla_interval, sla_time, max_execution_date, cadence, execution_dat
     # Check SLA miss when it's before SLA time to see the state of previous run.
     if cadence != "triggered":
         for record in execution_dates:
-            if record["execution_date"] <= checkpoint:
-                return record["execution_date"] > max_execution_date
+            if record <= checkpoint:
+                return record > max_execution_date
 
     return False
 
