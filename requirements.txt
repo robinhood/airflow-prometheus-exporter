@@ -1,6 +1,6 @@
 SQLAlchemy-UTCDateTime==1.0.4
 apache-airflow>=1.10.12
-croniter==0.3.37
+croniter==0.3.36
 dateparser==1.0.0
 importlib_metadata~=2.0
 marshmallow-sqlalchemy==0.23.1
