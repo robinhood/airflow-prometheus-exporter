@@ -21,7 +21,7 @@ from sqlalchemy_utcdatetime import UTCDateTime
 from airflow.configuration import conf
 from airflow.models import DagModel, DagRun, TaskFail, TaskInstance, XCom
 from airflow.plugins_manager import AirflowPlugin
-from airflow.settings import RBAC, Session
+from airflow.settings import Session
 from airflow.utils.log.logging_mixin import LoggingMixin
 from airflow.utils.state import State
 from airflow_prometheus_exporter.xcom_config import load_xcom_config
@@ -940,29 +940,19 @@ class MetricsCollector(object):
 
 REGISTRY.register(MetricsCollector())
 
-if RBAC:
-    from flask_appbuilder import BaseView as FABBaseView, expose as FABexpose
 
-    class RBACMetrics(FABBaseView):
-        route_base = "/admin/metrics/"
+class RBACMetrics(BaseView):
+    route_base = "/admin/metrics/"
 
-        @FABexpose("/")
-        def list(self):
-            return Response(generate_latest(), mimetype="text")
+    @expose("/")
+    def list(self):
+        return Response(generate_latest(), mimetype="text")
 
-    # Metrics View for Flask app builder used in airflow with rbac enabled
-    RBACmetricsView = {"view": RBACMetrics(), "name": "Metrics", "category": "Public"}
-    ADMIN_VIEW = []
-    RBAC_VIEW = [RBACmetricsView]
-else:
 
-    class Metrics(BaseView):
-        @expose("/")
-        def index(self):
-            return Response(generate_latest(), mimetype="text/plain")
-
-    ADMIN_VIEW = [Metrics(category="Prometheus exporter", name="Metrics")]
-    RBAC_VIEW = []
+# Metrics View for Flask app builder used in airflow with rbac enabled
+RBACmetricsView = {"view": RBACMetrics(), "name": "Metrics", "category": "Public"}
+ADMIN_VIEW = []
+RBAC_VIEW = [RBACmetricsView]
 
 
 class AirflowPrometheusPlugin(AirflowPlugin):
