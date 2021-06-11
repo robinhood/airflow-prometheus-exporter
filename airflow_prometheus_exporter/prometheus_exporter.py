@@ -10,7 +10,7 @@ from contextlib import contextmanager
 import dateparser
 import pendulum
 from flask import Response
-from flask_admin import BaseView, expose
+from flask_appbuilder import BaseView, expose
 from prometheus_client import REGISTRY, generate_latest
 from prometheus_client.core import GaugeMetricFamily
 from pytimeparse import parse as pytime_parse
