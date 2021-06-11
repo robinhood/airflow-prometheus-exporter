@@ -4,7 +4,7 @@ croniter==1.0.13
 dateparser==1.0.0
 importlib_metadata==1.7.0
 marshmallow-sqlalchemy==0.23.1
-marshmallow=3.12.1=
+marshmallow=3.12.1
 numpy==1.20.3
 pendulum==2.1.2
 prometheus_client==0.8.0
