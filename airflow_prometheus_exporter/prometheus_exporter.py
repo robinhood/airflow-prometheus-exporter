@@ -121,8 +121,8 @@ def get_dag_duration_info():
                 ),
             )
             .filter(
-                TaskInstance.start_date.isnot(None),
-                TaskInstance.end_date.isnot(None),
+                dag_start_dt_query.c.start_date.isnot(None),
+                DagRun.end_date.isnot(None),
             )
             .all()
         )
@@ -446,7 +446,8 @@ class MetricsCollector(object):
         for tasks in xcom_config.get("xcom_params", []):
             for param in get_xcom_params(tasks["task_id"]):
                 xcom_value = extract_xcom_parameter(param.value)
-
+                if not isinstance(xcom_value, dict):
+                    xcom_value = {xcom_value: xcom_value}
                 if tasks["key"] in xcom_value:
                     xcom_params.add_metric(
                         [param.dag_id, param.task_id], xcom_value[tasks["key"]]
