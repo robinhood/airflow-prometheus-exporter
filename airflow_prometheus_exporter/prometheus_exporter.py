@@ -395,6 +395,28 @@ def get_sla_miss():
         upsert_auxiliary_info(session, upsert_dict)
 
 
+def get_unmonitored_dag():
+    with session_scope(Session) as session:
+        query = (
+            session.query(
+                DagModel.dag_id
+            )
+            .join(
+                DelayAlertMetadata,
+                DagModel.dag_id == DelayAlertMetadata.dag_id,
+                isouter=True,
+            )
+            .filter(
+                DelayAlertMetadata.dag_id.is_(None),
+                DagModel.is_active == True,
+                DagModel.is_paused == False,
+            )
+        )
+
+        for r in query:
+            yield r.dag_id
+
+
 class MetricsCollector(object):
     """Metrics Collector for prometheus."""
 
@@ -493,6 +515,17 @@ class MetricsCollector(object):
             )
 
         yield sla_miss_metric
+
+
+        unmonitored_dag_metric = GaugeMetricFamily(
+            "airflow_unmonitored_dag",
+            "Airflow Unmonitored DAG",
+            labels=["dag_id"],
+        )
+
+        for dag_id in get_unmonitored_dag():
+            unmonitored_dag_metric.add_metric([dag_id], True)
+        yield unmonitored_dag_metric
 
 
 REGISTRY.register(MetricsCollector())
