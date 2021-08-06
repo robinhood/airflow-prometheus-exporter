@@ -211,31 +211,37 @@ def sla_check(sla_interval, sla_time, max_execution_date, cadence, latest_sla_mi
 
     # Check SLA miss when it's before SLA time to see the state of previous run.
     if cadence != "triggered":
-        return latest_sla_miss_state
+        # Default to False in case of new alert before SLA time
+        return latest_sla_miss_state or False
 
     return False
 
 
-def upsert_auxiliary_info(session, key, value, insert):
-    dag_id, task_id = key
-    latest_successful_run = value["max_execution_date"]
-    latest_sla_miss_state = value["sla_miss"]
+def upsert_auxiliary_info(session, upsert_dict):
+    for k, v in upsert_dict.items():
+        dag_id, task_id = k
+        value = v["value"]
+        insert = v["insert"]
+        latest_successful_run = value["max_execution_date"]
+        latest_sla_miss_state = value["sla_miss"]
 
-    if insert:
-        session.add(DelayAlertAuxiliaryInfo(
-            dag_id=dag_id,
-            task_id=task_id,
-            latest_successful_run=latest_successful_run,
-            latest_sla_miss_state=latest_sla_miss_state,
-        ))
-    else:
-        session.query(DelayAlertAuxiliaryInfo).filter(
-            DelayAlertAuxiliaryInfo.dag_id == dag_id,
-            DelayAlertAuxiliaryInfo.task_id == task_id,
-        ).update({
-            DelayAlertAuxiliaryInfo.latest_successful_run: latest_successful_run,
-            DelayAlertAuxiliaryInfo.latest_sla_miss_state: latest_sla_miss_state,
-        })
+        if insert:
+            session.add(DelayAlertAuxiliaryInfo(
+                dag_id=dag_id,
+                task_id=task_id,
+                latest_successful_run=latest_successful_run,
+                latest_sla_miss_state=latest_sla_miss_state,
+            ))
+        else:
+            session.query(DelayAlertAuxiliaryInfo).filter(
+                DelayAlertAuxiliaryInfo.dag_id == dag_id,
+                DelayAlertAuxiliaryInfo.task_id == task_id,
+            ).update({
+                DelayAlertAuxiliaryInfo.latest_successful_run: latest_successful_run,
+                DelayAlertAuxiliaryInfo.latest_sla_miss_state: latest_sla_miss_state,
+            })
+    session.flush()
+    session.commit()
 
 
 def get_sla_miss():
@@ -341,8 +347,8 @@ def get_sla_miss():
             )
         )
 
-        processed = set()
         epoch = pytz.timezone(TIMEZONE).localize(datetime.datetime.utcfromtimestamp(0))
+        upsert_dict = {}
         for alert in alert_query:
             key = (alert.dag_id, alert.task_id)
             insert = update = False
@@ -363,13 +369,14 @@ def get_sla_miss():
                 alert.latest_sla_miss_state,
             )
 
-            if key not in processed and (insert or update or sla_miss != alert.latest_sla_miss_state):
-                processed.add(key)
-                values = {
-                    "max_execution_date": max_execution_date,
-                    "sla_miss": sla_miss,
+            if insert or update or sla_miss != alert.latest_sla_miss_state:
+                upsert_dict[key] = {
+                    "value":  {
+                        "max_execution_date": max_execution_date,
+                        "sla_miss": sla_miss,
+                    },
+                    "insert": insert,
                 }
-                upsert_auxiliary_info(session, key, values, insert)
 
             yield {
                 "dag_id": alert.dag_id,
@@ -385,8 +392,7 @@ def get_sla_miss():
                 "sla_time": alert.sla_time or MISSING,
             }
 
-        session.flush()
-        session.commit()
+        upsert_auxiliary_info(session, upsert_dict)
 
 
 class MetricsCollector(object):
