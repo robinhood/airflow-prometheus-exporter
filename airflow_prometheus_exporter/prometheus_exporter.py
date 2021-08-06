@@ -500,7 +500,7 @@ class MetricsCollector(object):
         )
 
         for alert in get_sla_miss():
-            sla_miss_dags_metric.add_metric(
+            sla_miss_metric.add_metric(
                 [
                     alert["dag_id"],
                     alert["task_id"],
