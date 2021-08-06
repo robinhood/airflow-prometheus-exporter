@@ -16,6 +16,7 @@ from prometheus_client.core import GaugeMetricFamily
 from pytimeparse import parse as pytime_parse
 from sqlalchemy import Column, String, and_, func
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.sql.expression import null
 from sqlalchemy_utcdatetime import UTCDateTime
 
 from airflow.configuration import conf
@@ -270,6 +271,7 @@ def get_sla_miss():
         dag_max_execution_date = (
             session.query(
                 DagRun.dag_id,
+                null().label("task_id"),
                 func.max(DagRun.execution_date).label("execution_date"),
             )
             .join(
