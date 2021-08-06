@@ -379,11 +379,17 @@ def get_sla_miss():
                     "insert": insert,
                 }
 
+            alert_name = alert.alert_name
+            if alert_name is None:
+                alert_name = alert.dag_id
+                if alert.task_id:
+                    alert_name += "." + alert.task_id
+
             yield {
                 "dag_id": alert.dag_id,
                 "task_id": alert.task_id or MISSING,
                 "affected_pipeline": alert.affected_pipeline or MISSING,
-                "alert_name": alert.alert_name or alert.dag_id,
+                "alert_name": alert_name,
                 "alert_target": alert.alert_target or MISSING,
                 "group_title": alert.group_title or alert.alert_name,
                 "inhibit_rule": alert.inhibit_rule or MISSING,
