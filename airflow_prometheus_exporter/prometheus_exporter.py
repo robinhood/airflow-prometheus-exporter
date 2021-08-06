@@ -379,6 +379,10 @@ def get_sla_miss():
                     "insert": insert,
                 }
 
+            # Only report records that missed SLA
+            if sla_miss is False:
+                continue
+
             alert_name = alert.alert_name
             if alert_name is None:
                 alert_name = alert.dag_id
