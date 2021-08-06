@@ -31,8 +31,7 @@ CANARY_DAG = "canary_dag"
 RETENTION_TIME = os.environ.get("PROMETHEUS_METRICS_DAYS", 21)
 TIMEZONE = conf.get("core", "default_timezone")
 TIMEZONE_LA = "America/Los_Angeles"
-MISSING = "missing"
-DEFAULT_LINK = "https://openmail.atlassian.net/wiki/spaces/ETL/pages/2132508806/Help"
+MISSING = "n/a"
 
 
 @contextmanager
@@ -388,7 +387,7 @@ def get_sla_miss():
                 "alert_target": alert.alert_target or MISSING,
                 "group_title": alert.group_title or alert.alert_name,
                 "inhibit_rule": alert.inhibit_rule or MISSING,
-                "link": alert.link or DEFAULT_LINK,
+                "link": alert.link or MISSING,
                 "sla_interval": alert.sla_interval,
                 "sla_miss": sla_miss,
                 "sla_time": alert.sla_time or MISSING,
