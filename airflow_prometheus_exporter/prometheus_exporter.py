@@ -525,10 +525,6 @@ def get_sla_miss():
                 "insert": insert,
             }
 
-        # Only report records that missed SLA
-        if sla_miss is False:
-            continue
-
         alert_name = alert.alert_name
         if alert_name is None:
             alert_name = alert.dag_id
@@ -555,7 +551,8 @@ def get_sla_miss():
 def get_unmonitored_dag():
     query = (
         session.query(
-            DagModel.dag_id
+            DagModel.dag_id,
+            DelayAlertMetadata.dag_id.is_(None).label("unmonitored"),
         )
         .join(
             DelayAlertMetadata,
@@ -563,14 +560,17 @@ def get_unmonitored_dag():
             isouter=True,
         )
         .filter(
-            DelayAlertMetadata.dag_id.is_(None),
             DagModel.is_active == True,
             DagModel.is_paused == False,
+        )
+        .group_by(
+            DagModel.dag_id,
+            "unmonitored",
         )
     )
 
     for r in query:
-        yield r.dag_id
+        yield r
 
 
 class MetricsCollector(object):
@@ -793,8 +793,8 @@ class MetricsCollector(object):
             labels=["dag_id"],
         )
 
-        for dag_id in get_unmonitored_dag():
-            unmonitored_dag_metric.add_metric([dag_id], True)
+        for r in get_unmonitored_dag():
+            unmonitored_dag_metric.add_metric([r.dag_id], r.unmonitored)
         yield unmonitored_dag_metric
 
 
