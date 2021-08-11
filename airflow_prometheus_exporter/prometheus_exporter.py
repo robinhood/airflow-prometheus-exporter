@@ -67,10 +67,156 @@ class DelayAlertAuxiliaryInfo(Base):
     task_id = Column(String, primary_key=True, nullable=True)
     latest_successful_run = Column(UTCDateTime)
 
+######################
+# DAG Related Metrics
+######################
+
+
+def get_dag_state_info():
+    """Number of DAG Runs with particular state."""
+    min_date_to_filter = pendulum.now(TIMEZONE).subtract(days=RETENTION_TIME)
+    dag_status_query = (
+        session.query(
+            DagRun.dag_id, DagRun.state, func.count(DagRun.state).label("count")
+        )
+        .filter(
+            DagRun.execution_date > min_date_to_filter,
+            DagRun.external_trigger == False,
+            DagRun.state.isnot(None),
+        )  # noqa
+        .group_by(DagRun.dag_id, DagRun.state)
+        .subquery()
+    )
+    return (
+        session.query(
+            dag_status_query.c.dag_id,
+            dag_status_query.c.state,
+            dag_status_query.c.count,
+            DagModel.owners,
+            DelayAlertMetaData.cadence,
+            DelayAlertMetaData.severity,
+            DelayAlertMetaData.alert_target,
+            DelayAlertMetaData.alert_external_classification,
+            DelayAlertMetaData.alert_report_classification,
+            DelayAlertMetaData.sla_time,
+        )
+        .join(DagModel, DagModel.dag_id == dag_status_query.c.dag_id)
+        .filter(DagModel.is_active == True, DagModel.is_paused == False)  # noqa
+        .outerjoin(
+            DelayAlertMetaData,
+            DelayAlertMetaData.dag_id == dag_status_query.c.dag_id,
+        )
+        .filter(DelayAlertMetaData.task_id.is_(None))
+        .all()
+    )
+
+
+def get_dag_duration_info():
+    """Duration of successful DAG Runs."""
+    min_date_to_filter = pendulum.now(TIMEZONE).subtract(days=RETENTION_TIME)
+    max_execution_dt_query = (
+        session.query(
+            DagRun.dag_id, func.max(DagRun.execution_date).label("max_execution_dt")
+        )
+        .join(DagModel, DagModel.dag_id == DagRun.dag_id)
+        .filter(
+            DagModel.is_active == True,  # noqa
+            DagModel.is_paused == False,
+            DagRun.state == State.SUCCESS,
+            DagRun.end_date.isnot(None),
+            DagRun.execution_date > min_date_to_filter,
+        )
+        .group_by(DagRun.dag_id)
+        .subquery()
+    )
+
+    dag_start_dt_query = (
+        session.query(
+            max_execution_dt_query.c.dag_id,
+            max_execution_dt_query.c.max_execution_dt.label("execution_date"),
+            func.min(TaskInstance.start_date).label("start_date"),
+        )
+        .join(
+            TaskInstance,
+            and_(
+                TaskInstance.dag_id == max_execution_dt_query.c.dag_id,
+                (
+                    TaskInstance.execution_date
+                    == max_execution_dt_query.c.max_execution_dt  # noqa
+                ),
+            ),
+        )
+        .filter(
+            TaskInstance.start_date.isnot(None), TaskInstance.end_date.isnot(None)
+        )
+        .group_by(
+            max_execution_dt_query.c.dag_id,
+            max_execution_dt_query.c.max_execution_dt,
+        )
+        .subquery()
+    )
+
+    return (
+        session.query(
+            dag_start_dt_query.c.dag_id,
+            dag_start_dt_query.c.start_date,
+            DagRun.end_date,
+        )
+        .join(
+            DagRun,
+            and_(
+                DagRun.dag_id == dag_start_dt_query.c.dag_id,
+                DagRun.execution_date == dag_start_dt_query.c.execution_date,
+            ),
+        )
+        .all()
+    )
+
 
 ######################
 # Task Related Metrics
 ######################
+
+
+def get_task_state_info():
+    """Number of task instances with particular state."""
+    min_date_to_filter = pendulum.now(TIMEZONE).subtract(days=RETENTION_TIME)
+    task_status_query = (
+        session.query(
+            TaskInstance.dag_id,
+            TaskInstance.task_id,
+            TaskInstance.state,
+            func.count(TaskInstance.dag_id).label("value"),
+        )
+        .group_by(TaskInstance.dag_id, TaskInstance.task_id, TaskInstance.state)
+        .filter(TaskInstance.execution_date > min_date_to_filter)
+        .subquery()
+    )
+    return (
+        session.query(
+            task_status_query.c.dag_id,
+            task_status_query.c.task_id,
+            task_status_query.c.state,
+            task_status_query.c.value,
+            DagModel.owners,
+            DelayAlertMetaData.cadence,
+            DelayAlertMetaData.severity,
+            DelayAlertMetaData.alert_target,
+            DelayAlertMetaData.alert_external_classification,
+            DelayAlertMetaData.alert_report_classification,
+            DelayAlertMetaData.sla_time,
+        )
+        .join(DagModel, DagModel.dag_id == task_status_query.c.dag_id)
+        .filter(DagModel.is_active == True, DagModel.is_paused == False)  # noqa
+        .outerjoin(
+            DelayAlertMetaData,
+            (DelayAlertMetaData.dag_id == task_status_query.c.dag_id)
+            & (DelayAlertMetaData.task_id == task_status_query.c.task_id),  # noqa
+        )
+        .filter(DelayAlertMetaData.task_id.isnot(None))
+        .all()
+    )
+
 
 def get_task_failure_counts():
     """Compute Task Failure Counts."""
@@ -435,6 +581,120 @@ class MetricsCollector(object):
 
     def collect(self):
         """Collect metrics."""
+        # Task metrics
+        task_info = get_task_state_info()
+        t_state = GaugeMetricFamily(
+            "airflow_task_status",
+            "Shows the number of task instances with particular status",
+            labels=[
+                "dag_id",
+                "task_id",
+                "owner",
+                "status",
+                "cadence",
+                "severity",
+                "alert_target",
+                "alert_external_classification",
+                "alert_report_classification",
+                "sla_time",
+                "network",
+                "business",
+            ],
+        )
+        for task in task_info:
+            t_state.add_metric(
+                [
+                    task.dag_id,
+                    task.task_id,
+                    task.owners,
+                    task.state or MISSING,
+                    task.cadence or MISSING,
+                    task.severity or MISSING,
+                    task.alert_target or MISSING,
+                    task.alert_external_classification or MISSING,
+                    task.alert_report_classification or MISSING,
+                    task.sla_time or MISSING,
+                    "network",
+                    "business",
+                ],
+                task.value,
+            )
+        yield t_state
+
+        task_duration = GaugeMetricFamily(
+            "airflow_task_duration",
+            "Duration of successful tasks in seconds",
+            labels=["task_id", "dag_id", "execution_date"],
+        )
+        for task in get_task_duration_info():
+            task_duration_value = (task.end_date - task.start_date).total_seconds()
+            task_duration.add_metric(
+                [
+                    task.task_id,
+                    task.dag_id,
+                    task.execution_date.strftime("%Y-%m-%dT%H:%M%S"),
+                ],
+                task_duration_value,
+            )
+        yield task_duration
+
+        task_failure_count = GaugeMetricFamily(
+            "airflow_task_fail_count",
+            "Count of failed tasks",
+            labels=["dag_id", "task_id"],
+        )
+        for task in get_task_failure_counts():
+            task_failure_count.add_metric([task.dag_id, task.task_id], task.count)
+        yield task_failure_count
+
+        # Dag Metrics
+        dag_info = get_dag_state_info()
+        d_state = GaugeMetricFamily(
+            "airflow_dag_status",
+            "Shows the number of dag starts with this status",
+            labels=[
+                "dag_id",
+                "owner",
+                "status",
+                "cadence",
+                "severity",
+                "alert_target",
+                "alert_external_classification",
+                "alert_report_classification",
+                "sla_time",
+                "network",
+                "business",
+            ],
+        )
+        for dag in dag_info:
+            d_state.add_metric(
+                [
+                    dag.dag_id,
+                    dag.owners,
+                    dag.state,
+                    dag.cadence or MISSING,
+                    dag.severity or MISSING,
+                    dag.alert_target or MISSING,
+                    dag.alert_external_classification or MISSING,
+                    dag.alert_report_classification or MISSING,
+                    dag.sla_time or MISSING,
+                    "network",
+                    "business",
+                ],
+                dag.count,
+            )
+        yield d_state
+
+        dag_duration = GaugeMetricFamily(
+            "airflow_dag_run_duration",
+            "Duration of successful dag_runs in seconds",
+            labels=["dag_id"],
+        )
+        for dag in get_dag_duration_info():
+            dag_duration_value = (dag.end_date - dag.start_date).total_seconds()
+            dag_duration.add_metric([dag.dag_id], dag_duration_value)
+        yield dag_duration
+
         # Scheduler Metrics
         dag_scheduler_delay = GaugeMetricFamily(
             "airflow_dag_scheduler_delay",
