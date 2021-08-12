@@ -49,22 +49,16 @@ with session_scope(Session) as session:
 
     class DelayAlertMetadata(Base):
         __tablename__ = "delay_alert_metadata"
-        __table_args__ = {
-            "schema": "ddns",
-            "autoload": True
-        }
+        __table_args__ = {"schema": "ddns", "autoload": True}
         dag_id = Column(String, primary_key=True)
-
 
     class DelayAlertAuxiliaryInfo(Base):
         __tablename__ = "delay_alert_auxiliary_info"
-        __table_args__ = {
-            "schema": "ddns",
-            "autoload": True
-        }
+        __table_args__ = {"schema": "ddns", "autoload": True}
         dag_id = Column(String, primary_key=True)
         task_id = Column(String, primary_key=True, nullable=True)
         latest_successful_run = Column(UTCDateTime)
+
 
 ######################
 # DAG Related Metrics
@@ -364,7 +358,10 @@ def get_num_queued_tasks():
             .count()
         )
 
-def sla_check(sla_interval, sla_time, max_execution_date, cadence, latest_sla_miss_state):
+
+def sla_check(
+    sla_interval, sla_time, max_execution_date, cadence, latest_sla_miss_state
+):
     utc_datetime = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
 
     if sla_time:
@@ -402,20 +399,24 @@ def upsert_auxiliary_info(session, upsert_dict):
         latest_sla_miss_state = value["sla_miss"]
 
         if insert:
-            session.add(DelayAlertAuxiliaryInfo(
-                dag_id=dag_id,
-                task_id=task_id,
-                latest_successful_run=latest_successful_run,
-                latest_sla_miss_state=latest_sla_miss_state,
-            ))
+            session.add(
+                DelayAlertAuxiliaryInfo(
+                    dag_id=dag_id,
+                    task_id=task_id,
+                    latest_successful_run=latest_successful_run,
+                    latest_sla_miss_state=latest_sla_miss_state,
+                )
+            )
         else:
             session.query(DelayAlertAuxiliaryInfo).filter(
                 DelayAlertAuxiliaryInfo.dag_id == dag_id,
                 DelayAlertAuxiliaryInfo.task_id == task_id,
-            ).update({
-                DelayAlertAuxiliaryInfo.latest_successful_run: latest_successful_run,
-                DelayAlertAuxiliaryInfo.latest_sla_miss_state: latest_sla_miss_state,
-            })
+            ).update(
+                {
+                    DelayAlertAuxiliaryInfo.latest_successful_run: latest_successful_run,
+                    DelayAlertAuxiliaryInfo.latest_sla_miss_state: latest_sla_miss_state,
+                }
+            )
     session.flush()
     session.commit()
 
@@ -427,10 +428,7 @@ def get_sla_miss():
                 DelayAlertMetadata.dag_id,
                 DelayAlertMetadata.task_id,
             )
-            .join(
-                DagModel,
-                DelayAlertMetadata.dag_id == DagModel.dag_id
-            )
+            .join(DagModel, DelayAlertMetadata.dag_id == DagModel.dag_id)
             .filter(
                 DagModel.is_active == True,
                 DagModel.is_paused == False,
@@ -480,9 +478,7 @@ def get_sla_miss():
                 TaskInstance.dag_id,
                 TaskInstance.task_id,
             )
-            .union(
-                dag_max_execution_date
-            )
+            .union(dag_max_execution_date)
         )
 
         max_execution_dates = {}
@@ -494,7 +490,8 @@ def get_sla_miss():
             session.query(
                 DelayAlertMetadata.dag_id,
                 DelayAlertMetadata.task_id,
-                DelayAlertMetadata.affected_pipeline, DelayAlertMetadata.alert_target,
+                DelayAlertMetadata.affected_pipeline,
+                DelayAlertMetadata.alert_target,
                 DelayAlertMetadata.alert_name,
                 DelayAlertMetadata.cadence,
                 DelayAlertMetadata.group_title,
@@ -509,8 +506,8 @@ def get_sla_miss():
                 active_alert_query,
                 and_(
                     DelayAlertMetadata.dag_id == active_alert_query.c.dag_id,
-                    func.coalesce( DelayAlertMetadata.task_id, "n/a")
-                    == func.coalesce(active_alert_query.c.task_id, "n/a")
+                    func.coalesce(DelayAlertMetadata.task_id, "n/a")
+                    == func.coalesce(active_alert_query.c.task_id, "n/a"),
                 ),
             )
             .join(
@@ -518,13 +515,15 @@ def get_sla_miss():
                 and_(
                     DelayAlertMetadata.dag_id == DelayAlertAuxiliaryInfo.dag_id,
                     func.coalesce(DelayAlertMetadata.task_id, "n/a")
-                    == func.coalesce(DelayAlertAuxiliaryInfo.task_id, "n/a")
+                    == func.coalesce(DelayAlertAuxiliaryInfo.task_id, "n/a"),
                 ),
-                isouter=True
+                isouter=True,
             )
         )
 
-        epoch = datetime.datetime.utcfromtimestamp(0).replace(tzinfo=datetime.timezone.utc)
+        epoch = datetime.datetime.utcfromtimestamp(0).replace(
+            tzinfo=datetime.timezone.utc
+        )
         upsert_dict = {}
         for alert in alert_query:
             key = (alert.dag_id, alert.task_id)
@@ -548,7 +547,7 @@ def get_sla_miss():
 
             if insert or update or sla_miss != alert.latest_sla_miss_state:
                 upsert_dict[key] = {
-                    "value":  {
+                    "value": {
                         "max_execution_date": max_execution_date,
                         "sla_miss": sla_miss,
                     },
@@ -784,7 +783,6 @@ class MetricsCollector(object):
             )
 
         yield sla_miss_metric
-
 
         unmonitored_dag_metric = GaugeMetricFamily(
             "airflow_unmonitored_dag",
