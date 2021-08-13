@@ -459,7 +459,7 @@ def get_sla_miss():
             .group_by(DagRun.dag_id)
         )
 
-        task_max_execution_date = (
+        all_max_execution_date = (
             session.query(
                 TaskInstance.dag_id,
                 TaskInstance.task_id,
@@ -482,7 +482,7 @@ def get_sla_miss():
         )
 
         max_execution_dates = {}
-        for r in dag_max_execution_date:
+        for r in all_max_execution_date:
             max_execution_dates[(r.dag_id, r.task_id)] = r.execution_date
 
         # Getting all alerts with auxiliary data
@@ -566,7 +566,7 @@ def get_sla_miss():
                 "affected_pipeline": alert.affected_pipeline or MISSING,
                 "alert_name": alert_name,
                 "alert_target": alert.alert_target or MISSING,
-                "group_title": alert.group_title or alert.alert_name,
+                "group_title": alert.group_title or alert_name,
                 "inhibit_rule": alert.inhibit_rule or MISSING,
                 "link": alert.link or MISSING,
                 "sla_interval": alert.sla_interval,
