@@ -566,7 +566,7 @@ def get_sla_miss():
                 "affected_pipeline": alert.affected_pipeline or MISSING,
                 "alert_name": alert_name,
                 "alert_target": alert.alert_target or MISSING,
-                "group_title": alert.group_title or alert.alert_name,
+                "group_title": alert.group_title or alert_name,
                 "inhibit_rule": alert.inhibit_rule or MISSING,
                 "link": alert.link or MISSING,
                 "sla_interval": alert.sla_interval,
