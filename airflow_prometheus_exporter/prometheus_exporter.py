@@ -459,7 +459,7 @@ def get_sla_miss():
             .group_by(DagRun.dag_id)
         )
 
-        task_max_execution_date = (
+        all_max_execution_date = (
             session.query(
                 TaskInstance.dag_id,
                 TaskInstance.task_id,
@@ -482,7 +482,7 @@ def get_sla_miss():
         )
 
         max_execution_dates = {}
-        for r in dag_max_execution_date:
+        for r in all_max_execution_date:
             max_execution_dates[(r.dag_id, r.task_id)] = r.execution_date
 
         # Getting all alerts with auxiliary data
