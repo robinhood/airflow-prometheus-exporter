@@ -3,9 +3,9 @@
 
 """The setup script."""
 
-from setuptools import setup, find_packages
+from setuptools import setup
 
-PACKAGE_NAME = "wix_airflow_prometheus_exporter"
+PACKAGE_NAME = "wix-airflow-prometheus-exporter"
 PACKAGE_VERSION = "1.0.0"
 install_requirements = [
     'apache-airflow>=1.10.4',
