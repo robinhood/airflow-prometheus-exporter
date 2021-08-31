@@ -40,7 +40,7 @@ setup(
     ],
     entry_points={
         'airflow.plugins': [
-            'AirflowPrometheus = wix_airflow_prometheus_exporter.prometheus_exporter:AirflowPrometheusPlugin'
+            'WixAirflowPrometheus = wix_airflow_prometheus_exporter.prometheus_exporter:AirflowPrometheusPlugin'
         ]
     },
 )
