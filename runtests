@@ -1,6 +1,6 @@
 #!/bin/bash
-docker build -t airflow-prometheus-exporter -f docker/Dockerfile .
-docker run -d -p 8080:8080 --name airflow-prometheus-exporter airflow-prometheus-exporter
+docker build -t wix-airflow-prometheus-exporter -f docker/Dockerfile .
+docker run -d -p 8080:8080 --name wix-airflow-prometheus-exporter wix-airflow-prometheus-exporter
 
 BASE_URL="http://localhost:8080"
 HEALTH_ENDPOINT="${BASE_URL}/health"
@@ -26,8 +26,8 @@ curl --silent --show-error --fail "${METRICS_ENDPOINT}"
 
 STATUSCODE=$(curl --silent --output /dev/stderr --write-out "%{http_code}" "${METRICS_ENDPOINT}")
 
-docker stop airflow-prometheus-exporter
-docker rm airflow-prometheus-exporter
+docker stop wix-airflow-prometheus-exporter
+docker rm wix-airflow-prometheus-exporter
 
 if test $STATUSCODE -ne 200; then
     # error handling

@@ -15,8 +15,8 @@ RUN set -ex \
 COPY docker/airflow.sh ${AIRFLOW_USER_HOME}/airflow.sh
 RUN chmod +x ${AIRFLOW_USER_HOME}/airflow.sh
 
-COPY . /airflow-prometheus-exporter
-WORKDIR /airflow-prometheus-exporter
+COPY . /wix-airflow-prometheus-exporter
+WORKDIR /wix-airflow-prometheus-exporter
 RUN pip install -e .
 
 RUN chown -R airflow: ${AIRFLOW_USER_HOME}

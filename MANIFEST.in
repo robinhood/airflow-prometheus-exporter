@@ -2,7 +2,7 @@ include README.md
 include MANIFEST.in
 include setup.cfg
 include setup.py
-recursive-include airflow_prometheus_exporter/ *
+recursive-include wix_airflow_prometheus_exporter/ *
 
 recursive-exclude * __pycache__
 recursive-exclude * *.py[co]
