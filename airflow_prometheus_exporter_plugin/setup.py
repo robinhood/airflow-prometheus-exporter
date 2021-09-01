@@ -3,11 +3,11 @@ from setuptools import setup
 PACKAGE_NAME = "wix-airflow-prometheus-exporter"
 PACKAGE_VERSION = "1.0.0"
 install_requirements = [
-    'apache-airflow>=1.10.4',
-    'prometheus_client>=0.4.2',
-],
+                           'apache-airflow>=1.10.4',
+                           'prometheus_client>=0.4.2',
+                       ],
 
-extras_require={
+extras_require = {
     'dev': [
         'bumpversion',
         'tox',
@@ -24,8 +24,8 @@ setup(
     url='https://github.com/robinhood/airflow_prometheus_exporter',
     install_requires=install_requirements,
     extras_require=extras_require,
-    keywords='wix_airflow_prometheus_exporter',
-    py_modules=['prometheus_exporter','xcom_config'],
+    keywords='airflow_prometheus_exporter_plugin',
+    py_modules=['prometheus_exporter', 'xcom_config'],
     classifiers=[
         'Intended Audience :: Developers',
         'License :: OSI Approved :: BSD License',
@@ -36,7 +36,7 @@ setup(
     ],
     entry_points={
         'airflow.plugins': [
-            'WixAirflowPrometheus = wix_airflow_prometheus_exporter.prometheus_exporter:AirflowPrometheusPlugin'
+            'AirflowPrometheus = airflow_prometheus_exporter_plugin.prometheus_exporter:AirflowPrometheusPlugin'
         ]
     },
 )
