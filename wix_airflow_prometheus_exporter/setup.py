@@ -25,7 +25,7 @@ setup(
     install_requires=install_requirements,
     extras_require=extras_require,
     keywords='wix_airflow_prometheus_exporter',
-    packages=['wix_airflow_prometheus_exporter'],
+    py_modules=['prometheus_exporter','xcom_config'],
     classifiers=[
         'Intended Audience :: Developers',
         'License :: OSI Approved :: BSD License',
