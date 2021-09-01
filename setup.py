@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
-"""The setup script."""
-
 from setuptools import setup
 
 PACKAGE_NAME = "wix-airflow-prometheus-exporter"
@@ -25,7 +20,8 @@ setup(
     version=PACKAGE_VERSION,
     author='Robinhood Markets, Inc. Forked by Roy Noyman',
     author_email='Royno@wix.com',
-    description='Prometheus Exporter for Airflow Metrics',
+    description='Prometheus Exporter for Airflow Metrics. deprecation date: September 2021',
+    url='https://github.com/robinhood/airflow_prometheus_exporter',
     install_requires=install_requirements,
     extras_require=extras_require,
     keywords='wix_airflow_prometheus_exporter',

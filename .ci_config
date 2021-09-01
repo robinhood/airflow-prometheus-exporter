@@ -1,0 +1,4 @@
+{
+ "base_container_image": "docker-repo.wixpress.com/com.wixpress.python3-tests-base:snapshot",
+ "python_version": "3"
+}
