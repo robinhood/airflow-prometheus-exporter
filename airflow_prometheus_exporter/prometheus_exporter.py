@@ -403,7 +403,7 @@ class MetricsCollector(object):
             labels=["dag_id", "owner", "status"],
         )
         for dag in dag_info:
-            d_state.add_metric([dag.dag_id, dag.owners, dag.state], dag.count)
+            d_state.add_metric([dag.dag_id, dag.owners, dag.state or 'none'], dag.count)
         yield d_state
 
         dag_duration = GaugeMetricFamily(
