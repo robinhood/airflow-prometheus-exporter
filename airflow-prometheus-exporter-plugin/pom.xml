@@ -4,7 +4,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.wixpress</groupId>
-    <artifactId>wix-airflow-promethues-exporter-python</artifactId>
+    <artifactId>airflow-prometheus-exporter-plugin</artifactId>
     <version>1.0.0-SNAPSHOT</version>
 
     <organization>

@@ -23,6 +23,6 @@
     </developers>
 
     <modules>
-        <module>airflow_promethues_exporter_plugin</module>
+        <module>airflow-promethues-exporter-plugin</module>
     </modules>
 </project>

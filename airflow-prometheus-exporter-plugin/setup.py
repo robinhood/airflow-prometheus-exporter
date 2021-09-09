@@ -24,8 +24,8 @@ setup(
     url='https://github.com/robinhood/airflow_prometheus_exporter',
     install_requires=install_requirements,
     extras_require=extras_require,
-    keywords='airflow_prometheus_exporter_plugin',
-    py_modules=['prometheus_exporter', 'xcom_config'],
+    keywords='airflow-prometheus-exporter-plugin',
+    packages=['airflow_prometheus_exporter_plugin'],
     classifiers=[
         'Intended Audience :: Developers',
         'License :: OSI Approved :: BSD License',
@@ -36,7 +36,7 @@ setup(
     ],
     entry_points={
         'airflow.plugins': [
-            'AirflowPrometheus = airflow_prometheus_exporter_plugin.prometheus_exporter:AirflowPrometheusPlugin'
+            'AirflowPrometheus = airflow-prometheus-exporter-plugin.prometheus_exporter:AirflowPrometheusPlugin'
         ]
     },
 )

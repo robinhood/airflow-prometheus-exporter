@@ -15,7 +15,7 @@ from prometheus_client import generate_latest, REGISTRY
 from prometheus_client.core import GaugeMetricFamily
 from sqlalchemy import and_, func
 
-from airflow_prometheus_exporter_plugin.xcom_config import load_xcom_config
+from xcom_config import load_xcom_config
 
 CANARY_DAG = "canary_dag"
 
