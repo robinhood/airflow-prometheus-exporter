@@ -7,15 +7,15 @@ from airflow.configuration import conf
 from airflow.models import DagModel, DagRun, TaskInstance, TaskFail, XCom
 from airflow.plugins_manager import AirflowPlugin
 from airflow.settings import RBAC, Session
-from airflow.utils.state import State
 from airflow.utils.log.logging_mixin import LoggingMixin
+from airflow.utils.state import State
 from flask import Response
 from flask_admin import BaseView, expose
 from prometheus_client import generate_latest, REGISTRY
 from prometheus_client.core import GaugeMetricFamily
 from sqlalchemy import and_, func
 
-from xcom_config import load_xcom_config
+from airflow_prometheus_exporter_plugin.xcom_config import load_xcom_config
 
 CANARY_DAG = "canary_dag"
 
@@ -43,8 +43,8 @@ def get_dag_state_info():
                 DagRun.state,
                 func.count(DagRun.state).label("count"),
             )
-            .group_by(DagRun.dag_id, DagRun.state)
-            .subquery()
+                .group_by(DagRun.dag_id, DagRun.state)
+                .subquery()
         )
         return (
             session.query(
@@ -53,12 +53,12 @@ def get_dag_state_info():
                 dag_status_query.c.count,
                 DagModel.owners,
             )
-            .join(DagModel, DagModel.dag_id == dag_status_query.c.dag_id)
-            .filter(
+                .join(DagModel, DagModel.dag_id == dag_status_query.c.dag_id)
+                .filter(
                 DagModel.is_active == True,  # noqa
                 DagModel.is_paused == False,
             )
-            .all()
+                .all()
         )
 
 
@@ -70,15 +70,15 @@ def get_dag_duration_info():
                 DagRun.dag_id,
                 func.max(DagRun.execution_date).label("max_execution_dt"),
             )
-            .join(DagModel, DagModel.dag_id == DagRun.dag_id)
-            .filter(
+                .join(DagModel, DagModel.dag_id == DagRun.dag_id)
+                .filter(
                 DagModel.is_active == True,  # noqa
                 DagModel.is_paused == False,
                 DagRun.state == State.SUCCESS,
                 DagRun.end_date.isnot(None),
             )
-            .group_by(DagRun.dag_id)
-            .subquery()
+                .group_by(DagRun.dag_id)
+                .subquery()
         )
 
         dag_start_dt_query = (
@@ -89,25 +89,25 @@ def get_dag_duration_info():
                 ),
                 func.min(TaskInstance.start_date).label("start_date"),
             )
-            .join(
+                .join(
                 TaskInstance,
                 and_(
                     TaskInstance.dag_id == max_execution_dt_query.c.dag_id,
                     (
-                        TaskInstance.execution_date
-                        == max_execution_dt_query.c.max_execution_dt
+                            TaskInstance.execution_date
+                            == max_execution_dt_query.c.max_execution_dt
                     ),
                 ),
             )
-            .filter(
+                .filter(
                 TaskInstance.start_date.isnot(None),
                 TaskInstance.end_date.isnot(None),
             )
-            .group_by(
+                .group_by(
                 max_execution_dt_query.c.dag_id,
                 max_execution_dt_query.c.max_execution_dt,
             )
-            .subquery()
+                .subquery()
         )
 
         return (
@@ -116,7 +116,7 @@ def get_dag_duration_info():
                 dag_start_dt_query.c.start_date,
                 DagRun.end_date,
             )
-            .join(
+                .join(
                 DagRun,
                 and_(
                     DagRun.dag_id == dag_start_dt_query.c.dag_id,
@@ -124,7 +124,7 @@ def get_dag_duration_info():
                     == dag_start_dt_query.c.execution_date,
                 ),
             )
-            .all()
+                .all()
         )
 
 
@@ -143,10 +143,10 @@ def get_task_state_info():
                 TaskInstance.state,
                 func.count(TaskInstance.dag_id).label("value"),
             )
-            .group_by(
+                .group_by(
                 TaskInstance.dag_id, TaskInstance.task_id, TaskInstance.state
             )
-            .subquery()
+                .subquery()
         )
         return (
             session.query(
@@ -156,12 +156,12 @@ def get_task_state_info():
                 task_status_query.c.value,
                 DagModel.owners,
             )
-            .join(DagModel, DagModel.dag_id == task_status_query.c.dag_id)
-            .filter(
+                .join(DagModel, DagModel.dag_id == task_status_query.c.dag_id)
+                .filter(
                 DagModel.is_active == True,  # noqa
                 DagModel.is_paused == False,
             )
-            .all()
+                .all()
         )
 
 
@@ -174,12 +174,12 @@ def get_task_failure_counts():
                 TaskFail.task_id,
                 func.count(TaskFail.dag_id).label("count"),
             )
-            .join(DagModel, DagModel.dag_id == TaskFail.dag_id,)
-            .filter(
+                .join(DagModel, DagModel.dag_id == TaskFail.dag_id, )
+                .filter(
                 DagModel.is_active == True,  # noqa
                 DagModel.is_paused == False,
             )
-            .group_by(TaskFail.dag_id, TaskFail.task_id,)
+                .group_by(TaskFail.dag_id, TaskFail.task_id, )
         )
 
 
@@ -191,8 +191,8 @@ def get_xcom_params(task_id):
                 DagRun.dag_id,
                 func.max(DagRun.execution_date).label("max_execution_dt"),
             )
-            .group_by(DagRun.dag_id)
-            .subquery()
+                .group_by(DagRun.dag_id)
+                .subquery()
         )
 
         query = session.query(XCom.dag_id, XCom.task_id, XCom.value).join(
@@ -200,8 +200,8 @@ def get_xcom_params(task_id):
             and_(
                 (XCom.dag_id == max_execution_dt_query.c.dag_id),
                 (
-                    XCom.execution_date
-                    == max_execution_dt_query.c.max_execution_dt
+                        XCom.execution_date
+                        == max_execution_dt_query.c.max_execution_dt
                 ),
             ),
         )
@@ -243,15 +243,15 @@ def get_task_duration_info():
                 DagRun.dag_id,
                 func.max(DagRun.execution_date).label("max_execution_dt"),
             )
-            .join(DagModel, DagModel.dag_id == DagRun.dag_id,)
-            .filter(
+                .join(DagModel, DagModel.dag_id == DagRun.dag_id, )
+                .filter(
                 DagModel.is_active == True,  # noqa
                 DagModel.is_paused == False,
                 DagRun.state == State.SUCCESS,
                 DagRun.end_date.isnot(None),
             )
-            .group_by(DagRun.dag_id)
-            .subquery()
+                .group_by(DagRun.dag_id)
+                .subquery()
         )
 
         return (
@@ -262,22 +262,22 @@ def get_task_duration_info():
                 TaskInstance.end_date,
                 TaskInstance.execution_date,
             )
-            .join(
+                .join(
                 max_execution_dt_query,
                 and_(
                     (TaskInstance.dag_id == max_execution_dt_query.c.dag_id),
                     (
-                        TaskInstance.execution_date
-                        == max_execution_dt_query.c.max_execution_dt
+                            TaskInstance.execution_date
+                            == max_execution_dt_query.c.max_execution_dt
                     ),
                 ),
             )
-            .filter(
+                .filter(
                 TaskInstance.state == State.SUCCESS,
                 TaskInstance.start_date.isnot(None),
                 TaskInstance.end_date.isnot(None),
             )
-            .all()
+                .all()
         )
 
 
@@ -293,10 +293,10 @@ def get_dag_scheduler_delay():
             session.query(
                 DagRun.dag_id, DagRun.execution_date, DagRun.start_date,
             )
-            .filter(DagRun.dag_id == CANARY_DAG,)
-            .order_by(DagRun.execution_date.desc())
-            .limit(1)
-            .all()
+                .filter(DagRun.dag_id == CANARY_DAG, )
+                .order_by(DagRun.execution_date.desc())
+                .limit(1)
+                .all()
         )
 
 
@@ -308,12 +308,12 @@ def get_task_scheduler_delay():
                 TaskInstance.queue,
                 func.max(TaskInstance.start_date).label("max_start"),
             )
-            .filter(
+                .filter(
                 TaskInstance.dag_id == CANARY_DAG,
                 TaskInstance.queued_dttm.isnot(None),
             )
-            .group_by(TaskInstance.queue)
-            .subquery()
+                .group_by(TaskInstance.queue)
+                .subquery()
         )
         return (
             session.query(
@@ -322,18 +322,18 @@ def get_task_scheduler_delay():
                 TaskInstance.queued_dttm,
                 task_status_query.c.max_start.label("start_date"),
             )
-            .join(
+                .join(
                 TaskInstance,
                 and_(
                     TaskInstance.queue == task_status_query.c.queue,
                     TaskInstance.start_date == task_status_query.c.max_start,
                 ),
             )
-            .filter(
+                .filter(
                 TaskInstance.dag_id
                 == CANARY_DAG,  # Redundant, for performance.
             )
-            .all()
+                .all()
         )
 
 
@@ -342,8 +342,8 @@ def get_num_queued_tasks():
     with session_scope(Session) as session:
         return (
             session.query(TaskInstance)
-            .filter(TaskInstance.state == State.QUEUED)
-            .count()
+                .filter(TaskInstance.state == State.QUEUED)
+                .count()
         )
 
 
@@ -376,7 +376,7 @@ class MetricsCollector(object):
         )
         for task in get_task_duration_info():
             task_duration_value = (
-                task.end_date - task.start_date
+                    task.end_date - task.start_date
             ).total_seconds()
             task_duration.add_metric(
                 [task.task_id, task.dag_id, str(task.execution_date.date())],
@@ -413,7 +413,7 @@ class MetricsCollector(object):
         )
         for dag in get_dag_duration_info():
             dag_duration_value = (
-                dag.end_date - dag.start_date
+                    dag.end_date - dag.start_date
             ).total_seconds()
             dag_duration.add_metric([dag.dag_id], dag_duration_value)
         yield dag_duration
@@ -427,7 +427,7 @@ class MetricsCollector(object):
 
         for dag in get_dag_scheduler_delay():
             dag_scheduling_delay_value = (
-                dag.start_date - dag.execution_date
+                    dag.start_date - dag.execution_date
             ).total_seconds()
             dag_scheduler_delay.add_metric(
                 [dag.dag_id], dag_scheduling_delay_value
@@ -462,7 +462,7 @@ class MetricsCollector(object):
 
         for task in get_task_scheduler_delay():
             task_scheduling_delay_value = (
-                task.start_date - task.queued_dttm
+                    task.start_date - task.queued_dttm
             ).total_seconds()
             task_scheduler_delay.add_metric(
                 [task.queue], task_scheduling_delay_value
@@ -483,12 +483,14 @@ REGISTRY.register(MetricsCollector())
 if RBAC:
     from flask_appbuilder import BaseView as FABBaseView, expose as FABexpose
 
+
     class RBACMetrics(FABBaseView):
         route_base = "/admin/metrics/"
 
         @FABexpose('/')
         def list(self):
             return Response(generate_latest(), mimetype='text')
+
 
     # Metrics View for Flask app builder used in airflow with rbac enabled
     RBACmetricsView = {
@@ -503,6 +505,7 @@ else:
         @expose("/")
         def index(self):
             return Response(generate_latest(), mimetype="text/plain")
+
 
     ADMIN_VIEW = [Metrics(category="Prometheus exporter", name="Metrics")]
     RBAC_VIEW = []
