@@ -60,6 +60,10 @@ with session_scope(Session) as session:
         latest_successful_run = Column(UTCDateTime)
 
 
+def get_min_date():
+    utc_datetime = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
+    return utc_datetime - datetime.timedelta(days=RETENTION_TIME)
+
 ######################
 # DAG Related Metrics
 ######################
@@ -67,14 +71,14 @@ with session_scope(Session) as session:
 
 def get_dag_state_info():
     """Number of DAG Runs with particular state."""
-    min_date_to_filter = pendulum.now(TIMEZONE).subtract(days=RETENTION_TIME)
     with session_scope(Session) as session:
+        min_date = get_min_date()
         dag_status_query = (
             session.query(
                 DagRun.dag_id, DagRun.state, func.count(DagRun.state).label("count")
             )
             .filter(
-                DagRun.execution_date > min_date_to_filter,
+                DagRun.execution_date > min_date,
                 DagRun.external_trigger == False,
                 DagRun.state.isnot(None),
             )
@@ -96,8 +100,8 @@ def get_dag_state_info():
 
 def get_dag_duration_info():
     """Duration of successful DAG Runs."""
-    min_date_to_filter = pendulum.now(TIMEZONE).subtract(days=RETENTION_TIME)
     with session_scope(Session) as session:
+        min_date = get_min_date()
         max_execution_dt_query = (
             session.query(
                 DagRun.dag_id, func.max(DagRun.execution_date).label("max_execution_dt")
@@ -108,7 +112,7 @@ def get_dag_duration_info():
                 DagModel.is_paused == False,
                 DagRun.state == State.SUCCESS,
                 DagRun.end_date.isnot(None),
-                DagRun.execution_date > min_date_to_filter,
+                DagRun.execution_date > min_date,
             )
             .group_by(DagRun.dag_id)
             .subquery()
@@ -164,8 +168,8 @@ def get_dag_duration_info():
 
 def get_task_state_info():
     """Number of task instances with particular state."""
-    min_date_to_filter = pendulum.now(TIMEZONE).subtract(days=RETENTION_TIME)
     with session_scope(Session) as session:
+        min_date = get_min_date()
         task_status_query = (
             session.query(
                 TaskInstance.dag_id,
@@ -174,7 +178,7 @@ def get_task_state_info():
                 func.count(TaskInstance.dag_id).label("value"),
             )
             .group_by(TaskInstance.dag_id, TaskInstance.task_id, TaskInstance.state)
-            .filter(TaskInstance.execution_date > min_date_to_filter)
+            .filter(TaskInstance.execution_date > min_date)
             .subquery()
         )
         return (
