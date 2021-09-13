@@ -509,7 +509,8 @@ def get_sla_miss():
 
         max_execution_dates = {}
         for r in all_max_execution_date:
-            max_execution_dates[(r.dag_id, r.task_id)] = r.execution_date
+            key = (r.dag_id, r.task_id)
+            max_execution_dates[key] = r.execution_date
 
         # Getting all alerts with auxiliary data
         alert_query = (
@@ -558,7 +559,7 @@ def get_sla_miss():
         )
         upsert_dict = {}
         for alert in alert_query:
-            key = (alert.dag_id, alert.task_id, alert.sla_interval, alert.sla_time)
+            key = (alert.dag_id, alert.task_id)
             insert = update = False
 
             max_execution_date = max_execution_dates.get(key, epoch)
@@ -578,7 +579,8 @@ def get_sla_miss():
             )
 
             if insert or update or sla_miss != alert.latest_sla_miss_state:
-                upsert_dict[key] = {
+                upsert_dict_key = key + (alert.sla_interval, alert.sla_time)
+                upsert_dict[upsert_dict_key] = {
                     "value": {
                         "max_execution_date": max_execution_date,
                         "sla_miss": sla_miss,
@@ -626,9 +628,7 @@ def get_unmonitored_dag():
                 DagModel.is_paused == False,
                 DelayAlertMetadata.dag_id.is_(None),
             )
-            .group_by(
-                DagModel.dag_id,
-            )
+            .group_by(DagModel.dag_id)
         )
 
         for r in query:
