@@ -570,19 +570,20 @@ def get_sla_miss():
                 if alert.task_id:
                     alert_name += "." + alert.task_id
 
-            yield {
-                "dag_id": alert.dag_id,
-                "task_id": alert.task_id or MISSING,
-                "affected_pipeline": alert.affected_pipeline or MISSING,
-                "alert_name": alert_name,
-                "alert_target": alert.alert_target or MISSING,
-                "group_title": alert.group_title or alert_name,
-                "inhibit_rule": alert.inhibit_rule or MISSING,
-                "link": alert.link or MISSING,
-                "sla_interval": alert.sla_interval,
-                "sla_miss": sla_miss,
-                "sla_time": alert.sla_time or MISSING,
-            }
+            if sla_miss:
+                yield {
+                    "dag_id": alert.dag_id,
+                    "task_id": alert.task_id or MISSING,
+                    "affected_pipeline": alert.affected_pipeline or MISSING,
+                    "alert_name": alert_name,
+                    "alert_target": alert.alert_target or MISSING,
+                    "group_title": alert.group_title or alert_name,
+                    "inhibit_rule": alert.inhibit_rule or MISSING,
+                    "link": alert.link or MISSING,
+                    "sla_interval": alert.sla_interval,
+                    "sla_miss": sla_miss,
+                    "sla_time": alert.sla_time or MISSING,
+                }
 
         upsert_auxiliary_info(session, upsert_dict)
 
