@@ -51,6 +51,9 @@ with session_scope(Session) as session:
         __tablename__ = "delay_alert_metadata"
         __table_args__ = {"schema": "ddns", "autoload": True}
         dag_id = Column(String, primary_key=True)
+        task_id = Column(String, primary_key=True, nullable=True)
+        sla_interval = Column(String, primary_key=True)
+        sla_time = Column(String, primary_key=True, nullable=True)
 
     class DelayAlertAuxiliaryInfo(Base):
         __tablename__ = "delay_alert_auxiliary_info"
@@ -437,9 +440,12 @@ def get_sla_miss():
             session.query(
                 DelayAlertMetadata.dag_id,
                 DelayAlertMetadata.task_id,
+                DelayAlertMetadata.sla_interval,
+                DelayAlertMetadata.sla_time,
             )
             .join(DagModel, DelayAlertMetadata.dag_id == DagModel.dag_id)
             .filter(
+                DelayAlertMetadata.ready == True,
                 DagModel.is_active == True,
                 DagModel.is_paused == False,
             )
@@ -500,6 +506,8 @@ def get_sla_miss():
             session.query(
                 DelayAlertMetadata.dag_id,
                 DelayAlertMetadata.task_id,
+                DelayAlertMetadata.sla_interval,
+                DelayAlertMetadata.sla_time,
                 DelayAlertMetadata.affected_pipeline,
                 DelayAlertMetadata.alert_target,
                 DelayAlertMetadata.alert_name,
@@ -507,8 +515,6 @@ def get_sla_miss():
                 DelayAlertMetadata.group_title,
                 DelayAlertMetadata.inhibit_rule,
                 DelayAlertMetadata.link,
-                DelayAlertMetadata.sla_interval,
-                DelayAlertMetadata.sla_time,
                 DelayAlertAuxiliaryInfo.latest_successful_run,
                 DelayAlertAuxiliaryInfo.latest_sla_miss_state,
             )
@@ -518,6 +524,9 @@ def get_sla_miss():
                     DelayAlertMetadata.dag_id == active_alert_query.c.dag_id,
                     func.coalesce(DelayAlertMetadata.task_id, "n/a")
                     == func.coalesce(active_alert_query.c.task_id, "n/a"),
+                    DelayAlertMetadata.sla_interval == active_alert_query.c.sla_interval,
+                    func.coalesce(DelayAlertMetadata.sla_time, "n/a")
+                    == func.coalesce(active_alert_query.c.sla_time, "n/a"),
                 ),
             )
             .join(
@@ -526,6 +535,9 @@ def get_sla_miss():
                     DelayAlertMetadata.dag_id == DelayAlertAuxiliaryInfo.dag_id,
                     func.coalesce(DelayAlertMetadata.task_id, "n/a")
                     == func.coalesce(DelayAlertAuxiliaryInfo.task_id, "n/a"),
+                    DelayAlertMetadata.sla_interval == DelayAlertAuxiliaryInfo.sla_interval,
+                    func.coalesce(DelayAlertMetadata.sla_time, "n/a")
+                    == func.coalesce(DelayAlertAuxiliaryInfo.sla_time, "n/a"),
                 ),
                 isouter=True,
             )
