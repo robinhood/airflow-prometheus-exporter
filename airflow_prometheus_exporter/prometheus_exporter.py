@@ -77,13 +77,12 @@ def get_min_date():
 def get_dag_state_info():
     """Number of DAG Runs with particular state."""
     with session_scope(Session) as session:
-        min_date = get_min_date()
         dag_status_query = (
             session.query(
                 DagRun.dag_id, DagRun.state, func.count(DagRun.state).label("count")
             )
             .filter(
-                DagRun.execution_date > min_date,
+                DagRun.execution_date > get_min_date(),
                 DagRun.external_trigger == False,
                 DagRun.state.isnot(None),
             )
@@ -106,7 +105,6 @@ def get_dag_state_info():
 def get_dag_duration_info():
     """Duration of successful DAG Runs."""
     with session_scope(Session) as session:
-        min_date = get_min_date()
         max_execution_dt_query = (
             session.query(
                 DagRun.dag_id, func.max(DagRun.execution_date).label("max_execution_dt")
@@ -117,7 +115,7 @@ def get_dag_duration_info():
                 DagModel.is_paused == False,
                 DagRun.state == State.SUCCESS,
                 DagRun.end_date.isnot(None),
-                DagRun.execution_date > min_date,
+                DagRun.execution_date > get_min_date(),
             )
             .group_by(DagRun.dag_id)
             .subquery()
@@ -174,7 +172,6 @@ def get_dag_duration_info():
 def get_task_state_info():
     """Number of task instances with particular state."""
     with session_scope(Session) as session:
-        min_date = get_min_date()
         task_status_query = (
             session.query(
                 TaskInstance.dag_id,
@@ -183,7 +180,7 @@ def get_task_state_info():
                 func.count(TaskInstance.dag_id).label("value"),
             )
             .group_by(TaskInstance.dag_id, TaskInstance.task_id, TaskInstance.state)
-            .filter(TaskInstance.execution_date > min_date)
+            .filter(TaskInstance.execution_date > get_min_date())
             .subquery()
         )
         return (
@@ -277,6 +274,7 @@ def get_task_duration_info():
                 DagModel.is_paused == False,
                 DagRun.state == State.SUCCESS,
                 DagRun.end_date.isnot(None),
+                DagRun.execution_date > get_min_date(),
             )
             .group_by(DagRun.dag_id)
             .subquery()
@@ -319,7 +317,10 @@ def get_dag_scheduler_delay():
     with session_scope(Session) as session:
         return (
             session.query(DagRun.dag_id, DagRun.execution_date, DagRun.start_date)
-            .filter(DagRun.dag_id == CANARY_DAG)
+            .filter(
+                DagRun.dag_id == CANARY_DAG,
+                DagRun.execution_date > get_min_date(),
+            )
             .order_by(DagRun.execution_date.desc())
             .limit(1)
             .all()
@@ -334,7 +335,9 @@ def get_task_scheduler_delay():
                 TaskInstance.queue, func.max(TaskInstance.start_date).label("max_start")
             )
             .filter(
-                TaskInstance.dag_id == CANARY_DAG, TaskInstance.queued_dttm.isnot(None)
+                TaskInstance.dag_id == CANARY_DAG,
+                TaskInstance.queued_dttm.isnot(None),
+                TaskInstance.execution_date > get_min_date(),
             )
             .group_by(TaskInstance.queue)
             .subquery()
@@ -363,7 +366,10 @@ def get_num_queued_tasks():
     with session_scope(Session) as session:
         return (
             session.query(TaskInstance)
-            .filter(TaskInstance.state == State.QUEUED)
+            .filter(
+                TaskInstance.state == State.QUEUED,
+                TaskInstance.execution_date > get_min_date(),
+            )
             .count()
         )
 
@@ -452,6 +458,8 @@ def get_sla_miss():
             .group_by(
                 DelayAlertMetadata.dag_id,
                 DelayAlertMetadata.task_id,
+                DelayAlertMetadata.sla_interval,
+                DelayAlertMetadata.sla_time,
             )
             .subquery()
         )
@@ -471,6 +479,7 @@ def get_sla_miss():
             .filter(
                 DagRun.state == State.SUCCESS,
                 DagRun.end_date.isnot(None),
+                DagRun.execution_date > get_min_date(),
             )
             .group_by(DagRun.dag_id)
         )
@@ -489,6 +498,7 @@ def get_sla_miss():
             .filter(
                 TaskInstance.state == State.SUCCESS,
                 TaskInstance.end_date.isnot(None),
+                TaskInstance.execution_date > get_min_date(),
             )
             .group_by(
                 TaskInstance.dag_id,
@@ -605,7 +615,6 @@ def get_unmonitored_dag():
         query = (
             session.query(
                 DagModel.dag_id,
-                DelayAlertMetadata.dag_id.is_(None).label("unmonitored"),
             )
             .join(
                 DelayAlertMetadata,
@@ -615,10 +624,10 @@ def get_unmonitored_dag():
             .filter(
                 DagModel.is_active == True,
                 DagModel.is_paused == False,
+                DelayAlertMetadata.dag_id.is_(None),
             )
             .group_by(
                 DagModel.dag_id,
-                "unmonitored",
             )
         )
 
@@ -814,7 +823,7 @@ class MetricsCollector(object):
         )
 
         for r in get_unmonitored_dag():
-            unmonitored_dag_metric.add_metric([r.dag_id], r.unmonitored)
+            unmonitored_dag_metric.add_metric([r.dag_id], True)
         yield unmonitored_dag_metric
 
 
