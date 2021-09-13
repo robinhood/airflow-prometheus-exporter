@@ -57,6 +57,8 @@ with session_scope(Session) as session:
         __table_args__ = {"schema": "ddns", "autoload": True}
         dag_id = Column(String, primary_key=True)
         task_id = Column(String, primary_key=True, nullable=True)
+        sla_interval = Column(String, primary_key=True)
+        sla_time = Column(String, primary_key=True, nullable=True)
         latest_successful_run = Column(UTCDateTime)
 
 
@@ -396,7 +398,7 @@ def sla_check(
 
 def upsert_auxiliary_info(session, upsert_dict):
     for k, v in upsert_dict.items():
-        dag_id, task_id = k
+        dag_id, task_id, sla_interval, sla_time = k
         value = v["value"]
         insert = v["insert"]
         latest_successful_run = value["max_execution_date"]
@@ -407,6 +409,8 @@ def upsert_auxiliary_info(session, upsert_dict):
                 DelayAlertAuxiliaryInfo(
                     dag_id=dag_id,
                     task_id=task_id,
+                    sla_interval=sla_interval,
+                    sla_time=sla_time,
                     latest_successful_run=latest_successful_run,
                     latest_sla_miss_state=latest_sla_miss_state,
                 )
@@ -415,6 +419,8 @@ def upsert_auxiliary_info(session, upsert_dict):
             session.query(DelayAlertAuxiliaryInfo).filter(
                 DelayAlertAuxiliaryInfo.dag_id == dag_id,
                 DelayAlertAuxiliaryInfo.task_id == task_id,
+                DelayAlertAuxiliaryInfo.sla_interval == sla_interval,
+                DelayAlertAuxiliaryInfo.sla_time == sla_time,
             ).update(
                 {
                     DelayAlertAuxiliaryInfo.latest_successful_run: latest_successful_run,
@@ -530,7 +536,7 @@ def get_sla_miss():
         )
         upsert_dict = {}
         for alert in alert_query:
-            key = (alert.dag_id, alert.task_id)
+            key = (alert.dag_id, alert.task_id, alert.sla_interval, alert.sla_time)
             insert = update = False
 
             max_execution_date = max_execution_dates.get(key, epoch)
