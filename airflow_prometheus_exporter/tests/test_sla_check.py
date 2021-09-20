@@ -220,6 +220,5 @@ def sla_time(hours):
     ]
 )
 def test_sla_check(sla_check_kwargs, expected_result):
-    from pprint import pprint as pp
     assert sla_check(**sla_check_kwargs) == expected_result
 
