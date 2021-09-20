@@ -50,7 +50,6 @@ with session_scope(Session) as session:
     class DelayAlertMetadata(Base):
         __tablename__ = "delay_alert_metadata"
         __table_args__ = {"schema": "ddns"}
-        #__table_args__ = {"schema": "ddns", "autoload": True}
         dag_id = Column(String(250), primary_key=True)
         task_id = Column(String(250), primary_key=True, nullable=True)
         sla_interval = Column(String(64), primary_key=True)
@@ -69,7 +68,6 @@ with session_scope(Session) as session:
     class DelayAlertAuxiliaryInfo(Base):
         __tablename__ = "delay_alert_auxiliary_info"
         __table_args__ = {"schema": "ddns"}
-        #__table_args__ = {"schema": "ddns", "autoload": True}
         dag_id = Column(String(250), primary_key=True)
         task_id = Column(String(250), primary_key=True, nullable=True)
         sla_interval = Column(String(64), primary_key=True)
