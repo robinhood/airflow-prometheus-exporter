@@ -398,7 +398,7 @@ def sla_check(
             datetime.datetime.strptime(sla_time, "%H:%M").time(),
         ).replace(tzinfo=tz.gettz(TIMEZONE_LA))
     else:
-        # If no defined SLA time, meaning we check SLA miss every time.
+        # If no defined SLA time, meaning always run SLA check.
         sla_datetime = utc_datetime
 
     interval_in_second = pytime_parse(sla_interval)
