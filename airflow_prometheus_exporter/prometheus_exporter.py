@@ -386,7 +386,7 @@ def get_num_queued_tasks():
 
 
 def sla_check(
-    sla_interval, sla_time, max_execution_date, cadence, latest_sla_miss_state
+    sla_interval, sla_time, max_execution_date, latest_sla_miss_state
 ):
     utc_datetime = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
 
@@ -408,12 +408,8 @@ def sla_check(
     if utc_datetime >= sla_datetime:
         return max_execution_date < checkpoint
 
-    # Check SLA miss when it's before SLA time to see the state of previous run.
-    if cadence != "triggered":
-        # Default to False in case of new alert before SLA time
-        return latest_sla_miss_state or False
-
-    return False
+    # Default to False in case of new alert before SLA time
+    return latest_sla_miss_state or False
 
 
 def upsert_auxiliary_info(session, upsert_dict):
@@ -585,7 +581,6 @@ def get_sla_miss():
                 alert.sla_interval,
                 alert.sla_time,
                 max_execution_date,
-                alert.cadence,
                 alert.latest_sla_miss_state,
             )
 
