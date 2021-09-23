@@ -407,7 +407,7 @@ def sla_check(
     if utc_datetime >= sla_datetime:
         return max_execution_date < checkpoint
 
-    # Default to False in case of new alert before SLA time
+    # Use latest_sla_miss_state if it's before SLA time. Default to False
     return latest_sla_miss_state or False
 
 
