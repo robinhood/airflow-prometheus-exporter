@@ -57,7 +57,6 @@ with session_scope(Session) as session:
         affected_pipeline = Column(Text, nullable=True)
         alert_name = Column(String(250), nullable=True)
         alert_target = Column(String(250), nullable=True)
-        cadence = Column(String(250), nullable=True)
         group_title = Column(Text, nullable=True)
         inhibit_rule = Column(Text, nullable=True)
         link = Column(Text, nullable=True)
@@ -529,7 +528,6 @@ def get_sla_miss():
                 DelayAlertMetadata.affected_pipeline,
                 DelayAlertMetadata.alert_target,
                 DelayAlertMetadata.alert_name,
-                DelayAlertMetadata.cadence,
                 DelayAlertMetadata.group_title,
                 DelayAlertMetadata.inhibit_rule,
                 DelayAlertMetadata.link,
