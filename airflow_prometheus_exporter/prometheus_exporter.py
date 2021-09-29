@@ -1,4 +1,5 @@
 """Prometheus exporter for Airflow."""
+import time
 
 from contextlib import contextmanager
 from flask import Response
@@ -81,8 +82,10 @@ class MetricsCollector(object):
 
     def collect(self):
         """Collect metrics."""
+
+        start_time = time.monotonic()
+
         # Task metrics
-        print('jeff is cool')
         task_info = get_task_state_info(TaskInstance, DagModel)
         t_state = GaugeMetricFamily(
             "airflow_task_status",
@@ -164,13 +167,6 @@ class MetricsCollector(object):
             dag_duration.add_metric([dag.dag_id], dag_duration_value)
         yield dag_duration
 
-        dag_duration2 = GaugeMetricFamily(
-            "airflow_dag_jeff",
-            "Duration of successful dag_runs in seconds",
-            labels=["dag_id"],
-        )
-        dag_duration2.add_metric(['jeff'], 100)
-        yield dag_duration2
 
         # Scheduler Metrics
         dag_scheduler_delay = GaugeMetricFamily(
@@ -273,6 +269,15 @@ class MetricsCollector(object):
             unmonitored_dag_metric.add_metric([r.dag_id], True)
         yield unmonitored_dag_metric
 
+
+        extraction_time = GaugeMetricFamily(
+            "prometheus_exporter_extraction_time",
+            "Duration of exporter extraction in seconds",
+            labels=["elapsed_time"],
+        )
+
+        extraction_time.add_metric(['elapsed_time'], time.monotonic() - start_time)
+        yield extraction_time
 
 REGISTRY.register(MetricsCollector())
 

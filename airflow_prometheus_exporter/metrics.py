@@ -1,4 +1,3 @@
-
 import datetime
 import json
 import os
@@ -21,9 +20,7 @@ TIMEZONE_LA = "America/Los_Angeles"
 MISSING = "n/a"
 
 
-def sla_check(
-    sla_interval, sla_time, max_execution_date, latest_sla_miss_state
-):
+def sla_check(sla_interval, sla_time, max_execution_date, latest_sla_miss_state):
     utc_datetime = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
 
     if sla_time:
@@ -51,6 +48,7 @@ def sla_check(
 def get_min_date():
     utc_datetime = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
     return utc_datetime - datetime.timedelta(days=RETENTION_TIME)
+
 
 ######################
 # DAG Related Metrics
@@ -83,6 +81,7 @@ def get_dag_state_info(dag_run, dag_model, session=None):
         .filter(dag_model.is_active == True, dag_model.is_paused == False)
         .all()
     )
+
 
 @provide_session
 def get_dag_duration_info(dag_run, dag_model, task_instance, session=None):
@@ -150,6 +149,7 @@ def get_dag_duration_info(dag_run, dag_model, task_instance, session=None):
 # Task Related Metrics
 ######################
 
+
 @provide_session
 def get_task_state_info(task_instance, dag_model, session=None):
     """Number of task instances with particular state."""
@@ -177,6 +177,7 @@ def get_task_state_info(task_instance, dag_model, session=None):
         .all()
     )
 
+
 @provide_session
 def get_task_failure_counts(task_fail, dag_model, session=None):
     """Compute Task Failure Counts."""
@@ -190,6 +191,7 @@ def get_task_failure_counts(task_fail, dag_model, session=None):
         .filter(dag_model.is_active == True, dag_model.is_paused == False)  # noqa
         .group_by(task_fail.dag_id, task_fail.task_id)
     )
+
 
 @provide_session
 def get_xcom_params(task_instance, dag_run, xcom, task_id, session=None):
@@ -214,6 +216,7 @@ def get_xcom_params(task_instance, dag_run, xcom, task_id, session=None):
         return query.all()
     else:
         return query.filter(xcom.task_id == task_id).all()
+
 
 def extract_xcom_parameter(value):
     """Deserializes value stored in xcom table."""
@@ -304,6 +307,7 @@ def get_dag_scheduler_delay(dag_run, session=None):
         .all()
     )
 
+
 @provide_session
 def get_task_scheduler_delay(task_instance, session=None):
     """Compute Task scheduling delay."""
@@ -351,8 +355,6 @@ def get_num_queued_tasks(task_instance, session=None):
     )
 
 
-
-
 @provide_session
 def upsert_auxiliary_info(delay_alert_auxiliary_info, upsert_dict, session=None):
     for k, v in upsert_dict.items():
@@ -388,8 +390,16 @@ def upsert_auxiliary_info(delay_alert_auxiliary_info, upsert_dict, session=None)
     session.flush()
     session.commit()
 
+
 @provide_session
-def get_sla_miss(delay_alert_metadata, delay_alert_auxiliary_info, dag_model, dag_run, task_instance, session=None):
+def get_sla_miss(
+    delay_alert_metadata,
+    delay_alert_auxiliary_info,
+    dag_model,
+    dag_run,
+    task_instance,
+    session=None,
+):
     active_alert_query = (
         session.query(
             delay_alert_metadata.dag_id,
@@ -493,7 +503,8 @@ def get_sla_miss(delay_alert_metadata, delay_alert_auxiliary_info, dag_model, da
                 delay_alert_metadata.dag_id == delay_alert_auxiliary_info.dag_id,
                 func.coalesce(delay_alert_metadata.task_id, "n/a")
                 == func.coalesce(delay_alert_auxiliary_info.task_id, "n/a"),
-                delay_alert_metadata.sla_interval == delay_alert_auxiliary_info.sla_interval,
+                delay_alert_metadata.sla_interval
+                == delay_alert_auxiliary_info.sla_interval,
                 func.coalesce(delay_alert_metadata.sla_time, "n/a")
                 == func.coalesce(delay_alert_auxiliary_info.sla_time, "n/a"),
             ),
@@ -501,9 +512,7 @@ def get_sla_miss(delay_alert_metadata, delay_alert_auxiliary_info, dag_model, da
         )
     )
 
-    epoch = datetime.datetime.utcfromtimestamp(0).replace(
-        tzinfo=datetime.timezone.utc
-    )
+    epoch = datetime.datetime.utcfromtimestamp(0).replace(tzinfo=datetime.timezone.utc)
     upsert_dict = {}
     for alert in alert_query:
         key = (alert.dag_id, alert.task_id)
