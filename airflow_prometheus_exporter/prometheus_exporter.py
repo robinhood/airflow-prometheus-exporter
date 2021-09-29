@@ -271,7 +271,7 @@ class MetricsCollector(object):
 
 
         extraction_time = GaugeMetricFamily(
-            "prometheus_exporter_extraction_time",
+            "exporter_extraction_duration",
             "Duration of exporter extraction in seconds",
             labels=["elapsed_time"],
         )
