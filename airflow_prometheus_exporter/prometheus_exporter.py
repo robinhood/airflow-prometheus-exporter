@@ -82,6 +82,7 @@ class MetricsCollector(object):
     def collect(self):
         """Collect metrics."""
         # Task metrics
+        print('jeff is cool')
         task_info = get_task_state_info(TaskInstance, DagModel)
         t_state = GaugeMetricFamily(
             "airflow_task_status",
@@ -162,6 +163,14 @@ class MetricsCollector(object):
             dag_duration_value = (dag.end_date - dag.start_date).total_seconds()
             dag_duration.add_metric([dag.dag_id], dag_duration_value)
         yield dag_duration
+
+        dag_duration2 = GaugeMetricFamily(
+            "airflow_dag_jeff",
+            "Duration of successful dag_runs in seconds",
+            labels=["dag_id"],
+        )
+        dag_duration2.add_metric('key', 'jeff')
+        yield dag_duration2
 
         # Scheduler Metrics
         dag_scheduler_delay = GaugeMetricFamily(
