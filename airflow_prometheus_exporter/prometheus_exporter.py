@@ -169,7 +169,7 @@ class MetricsCollector(object):
             "Duration of successful dag_runs in seconds",
             labels=["dag_id"],
         )
-        dag_duration2.add_metric('key', 'jeff')
+        dag_duration2.add_metric('jeff', 100)
         yield dag_duration2
 
         # Scheduler Metrics
