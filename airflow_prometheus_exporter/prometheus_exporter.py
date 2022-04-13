@@ -285,7 +285,7 @@ REGISTRY.register(MetricsCollector())
 class RBACMetrics(BaseView):
     route_base = "/admin/metrics/"
 
-    @expose("/ori")
+    @expose("/")
     def list(self):
         return Response(generate_latest(), mimetype="text")
 
