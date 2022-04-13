@@ -71,7 +71,7 @@ with session_scope(Session) as session:
         latest_successful_run = Column(UTCDateTime)
         latest_sla_miss_state = Column(Boolean)
 
-    Base.create_all(checkfirst=True)
+    Base.metadata.create_all(checkfirst=True)
 
 
 
