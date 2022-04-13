@@ -86,7 +86,7 @@ class MetricsCollector(object):
         start_time = time.monotonic()
 
         # Task metrics
-        task_info = get_task_state_info(TaskInstance, DagModel)
+        task_info = get_task_state_info(DagRun, TaskInstance, DagModel)
         t_state = GaugeMetricFamily(
             "airflow_task_status",
             "Shows the number of task instances with particular status",
@@ -208,7 +208,7 @@ class MetricsCollector(object):
             labels=["queue"],
         )
 
-        for task in get_task_scheduler_delay(TaskInstance):
+        for task in get_task_scheduler_delay(DagRun, TaskInstance):
             task_scheduling_delay_value = (
                 task.start_date - task.queued_dttm
             ).total_seconds()
@@ -285,7 +285,7 @@ REGISTRY.register(MetricsCollector())
 class RBACMetrics(BaseView):
     route_base = "/admin/metrics/"
 
-    @expose("/")
+    @expose("/ori")
     def list(self):
         return Response(generate_latest(), mimetype="text")
 

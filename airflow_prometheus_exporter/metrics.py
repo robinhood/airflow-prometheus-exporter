@@ -92,7 +92,7 @@ def get_dag_duration_info(dag_run, dag_model, task_instance, session=None):
         )
         .join(dag_model, dag_model.dag_id == dag_run.dag_id)
         .filter(
-            dag_model.is_active == True,  # noqa
+            dag_model.is_active == True,
             dag_model.is_paused == False,
             dag_run.state == State.SUCCESS,
             dag_run.end_date.isnot(None),
@@ -114,7 +114,7 @@ def get_dag_duration_info(dag_run, dag_model, task_instance, session=None):
                 task_instance.dag_id == max_execution_dt_query.c.dag_id,
                 (
                     task_instance.execution_date
-                    == max_execution_dt_query.c.max_execution_dt  # noqa
+                    == max_execution_dt_query.c.max_execution_dt
                 ),
             ),
         )
@@ -151,7 +151,7 @@ def get_dag_duration_info(dag_run, dag_model, task_instance, session=None):
 
 
 @provide_session
-def get_task_state_info(task_instance, dag_model, session=None):
+def get_task_state_info(dag_run, task_instance, dag_model, session=None):
     """Number of task instances with particular state."""
     task_status_query = (
         session.query(
@@ -160,8 +160,11 @@ def get_task_state_info(task_instance, dag_model, session=None):
             task_instance.state,
             func.count(task_instance.dag_id).label("value"),
         )
+        .join(
+            dag_run, task_instance.run_id == dag_run.run_id
+        )
         .group_by(task_instance.dag_id, task_instance.task_id, task_instance.state)
-        .filter(task_instance.execution_date > get_min_date())
+        .filter(dag_run.execution_date > get_min_date())
         .subquery()
     )
     return (
@@ -173,7 +176,7 @@ def get_task_state_info(task_instance, dag_model, session=None):
             dag_model.owners,
         )
         .join(dag_model, dag_model.dag_id == task_status_query.c.dag_id)
-        .filter(dag_model.is_active == True, dag_model.is_paused == False)  # noqa
+        .filter(dag_model.is_active == True, dag_model.is_paused == False)
         .all()
     )
 
@@ -188,7 +191,7 @@ def get_task_failure_counts(task_fail, dag_model, session=None):
             func.count(task_fail.dag_id).label("count"),
         )
         .join(dag_model, dag_model.dag_id == task_fail.dag_id)
-        .filter(dag_model.is_active == True, dag_model.is_paused == False)  # noqa
+        .filter(dag_model.is_active == True, dag_model.is_paused == False)
         .group_by(task_fail.dag_id, task_fail.task_id)
     )
 
@@ -251,7 +254,7 @@ def get_task_duration_info(dag_model, dag_run, task_instance, session=None):
         )
         .join(dag_model, dag_model.dag_id == dag_run.dag_id)
         .filter(
-            dag_model.is_active == True,  # noqa
+            dag_model.is_active == True,
             dag_model.is_paused == False,
             dag_run.state == State.SUCCESS,
             dag_run.end_date.isnot(None),
@@ -267,7 +270,10 @@ def get_task_duration_info(dag_model, dag_run, task_instance, session=None):
             task_instance.task_id,
             task_instance.start_date,
             task_instance.end_date,
-            task_instance.execution_date,
+            dag_run.execution_date,
+        )
+        .join(
+            dag_run, task_instance.run_id == dag_run.run_id
         )
         .join(
             max_execution_dt_query,
@@ -275,7 +281,7 @@ def get_task_duration_info(dag_model, dag_run, task_instance, session=None):
                 (task_instance.dag_id == max_execution_dt_query.c.dag_id),
                 (
                     task_instance.execution_date
-                    == max_execution_dt_query.c.max_execution_dt  # noqa
+                    == max_execution_dt_query.c.max_execution_dt
                 ),
             ),
         )
@@ -309,16 +315,19 @@ def get_dag_scheduler_delay(dag_run, session=None):
 
 
 @provide_session
-def get_task_scheduler_delay(task_instance, session=None):
+def get_task_scheduler_delay(dag_run, task_instance, session=None):
     """Compute Task scheduling delay."""
     task_status_query = (
         session.query(
             task_instance.queue, func.max(task_instance.start_date).label("max_start")
         )
+        .join(
+            dag_run, task_instance.run_id == dag_run.run_id
+        )
         .filter(
             task_instance.dag_id == CANARY_DAG,
             task_instance.queued_dttm.isnot(None),
-            task_instance.execution_date > get_min_date(),
+            dag_run.execution_date > get_min_date()
         )
         .group_by(task_instance.queue)
         .subquery()
@@ -326,7 +335,7 @@ def get_task_scheduler_delay(task_instance, session=None):
     return (
         session.query(
             task_status_query.c.queue,
-            task_instance.execution_date,
+            dag_run.execution_date,
             task_instance.queued_dttm,
             task_status_query.c.max_start.label("start_date"),
         )
@@ -336,6 +345,9 @@ def get_task_scheduler_delay(task_instance, session=None):
                 task_instance.queue == task_status_query.c.queue,
                 task_instance.start_date == task_status_query.c.max_start,
             ),
+        )
+        .join(
+            dag_run, task_instance.run_id == dag_run.run_id
         )
         .filter(task_instance.dag_id == CANARY_DAG)  # Redundant, for performance.
         .all()
@@ -446,12 +458,15 @@ def get_sla_miss(
         session.query(
             task_instance.dag_id,
             task_instance.task_id,
-            func.max(task_instance.execution_date).label("execution_date"),
+            func.max(dag_run.execution_date).label("execution_date"),
         )
         .join(
             active_alert_query,
             (task_instance.dag_id == active_alert_query.c.dag_id)
             & (task_instance.task_id == active_alert_query.c.task_id),
+        )
+        .join(
+            dag_run, task_instance.run_id == dag_run.run_id
         )
         .filter(
             task_instance.state == State.SUCCESS,
