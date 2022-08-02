@@ -1,13 +1,13 @@
 """Prometheus exporter for Airflow."""
+import datetime
 import time
 
 from contextlib import contextmanager
-from datetime import datetime
 from flask import Response
 from flask_appbuilder import BaseView, expose
 from prometheus_client import REGISTRY, generate_latest
 from prometheus_client.core import GaugeMetricFamily
-from sqlalchemy import Column, String, Text, Boolean, and_, func, types
+from sqlalchemy import Boolean, Column, String, Text, and_, func, types
 from sqlalchemy.ext.declarative import declarative_base
 
 from airflow.plugins_manager import AirflowPlugin
@@ -41,11 +41,23 @@ def session_scope(session):
         session.close()
 
 
-class UTCDateTime(types.TypeDecorator):
-    impl = types.Datetime
+class UTCDateTime(TypeDecorator):
+    impl = DateTime
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is not None:
+            if not value.tzinfo:
+                raise TypeError("tzinfo is required")
+            value = value.astimezone(datetime.timezone.utc).replace(
+                tzinfo=None
+            )
+        return value
 
     def process_result_value(self, value, dialect):
-        return value.replace(tzinfo=datetime.timezone.utc)
+        if value is not None:
+            value = value.replace(tzinfo=datetime.timezone.utc)
+        return value
 
 
 with session_scope(Session) as session:
