@@ -291,6 +291,11 @@ class RBACMetrics(BaseView):
     def list(self):
         return Response(generate_latest(), mimetype="text")
 
+    @expose("/sync/")
+    def list(self):
+        return Response("hey, im here", mimetype="text")
+
+
 
 # Metrics View for Flask app builder used in airflow with rbac enabled
 RBACmetricsView = {"view": RBACMetrics(), "name": "Metrics", "category": "Public"}
