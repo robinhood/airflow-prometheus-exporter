@@ -306,12 +306,12 @@ REGISTRY.register(MetricsCollector())
 class RBACMetrics(BaseView):
     route_base = "/admin/metrics/"
 
-    @expose("/")
+    @expose("/list/")
     def list(self):
         return Response(generate_latest(), mimetype="text")
 
     @expose("/sync/")
-    def list(self):
+    def sync(self):
         return Response("hey, im here", mimetype="text")
 
 
