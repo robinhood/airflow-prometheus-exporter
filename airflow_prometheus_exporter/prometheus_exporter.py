@@ -7,7 +7,7 @@ from flask import Response
 from flask_appbuilder import BaseView, expose
 from prometheus_client import REGISTRY, generate_latest
 from prometheus_client.core import GaugeMetricFamily
-from sqlalchemy import Boolean, Column, String, Text, and_, func, types
+from sqlalchemy import Boolean, Column, DateTime, String, Text, and_, func, types
 from sqlalchemy.ext.declarative import declarative_base
 
 from airflow.plugins_manager import AirflowPlugin
