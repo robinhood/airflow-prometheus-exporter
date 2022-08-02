@@ -10,8 +10,9 @@ from prometheus_client.core import GaugeMetricFamily
 from sqlalchemy import Boolean, Column, DateTime, String, Text, and_, func, types
 from sqlalchemy.ext.declarative import declarative_base
 
-from airflow.plugins_manager import AirflowPlugin
+from airflow.hooks.base import BaseHook
 from airflow.models import DagModel, DagRun, TaskFail, TaskInstance, XCom
+from airflow.plugins_manager import AirflowPlugin
 from airflow.settings import Session
 from airflow_prometheus_exporter.xcom_config import load_xcom_config
 
@@ -65,7 +66,6 @@ with session_scope(Session) as session:
 
     class DelayAlertMetadata(Base):
         __tablename__ = "delay_alert_metadata"
-        #__table_args__ = {"schema": "ddns"}
         dag_id = Column(String(250), primary_key=True)
         task_id = Column(String(250), primary_key=True, nullable=True)
         sla_interval = Column(String(64), primary_key=True)
@@ -82,7 +82,6 @@ with session_scope(Session) as session:
 
     class DelayAlertAuxiliaryInfo(Base):
         __tablename__ = "delay_alert_auxiliary_info"
-        #__table_args__ = {"schema": "ddns"}
         dag_id = Column(String(250), primary_key=True)
         task_id = Column(String(250), primary_key=True, nullable=True)
         sla_interval = Column(String(64), primary_key=True)
@@ -312,7 +311,8 @@ class RBACMetrics(BaseView):
 
     @expose("/sync/")
     def sync(self):
-        return Response("hey, im here", mimetype="text")
+        connection = BaseHook.get_connection("test_conn")
+        return Response("It's new. [{}]".format(connection.password), mimetype="text")
 
 
 
