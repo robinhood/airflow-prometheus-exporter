@@ -2,6 +2,7 @@
 import datetime
 import time
 
+import pygsheets
 from contextlib import contextmanager
 from flask import Response
 from flask_appbuilder import BaseView, expose
@@ -311,8 +312,8 @@ class RBACMetrics(BaseView):
 
     @expose("/sync/")
     def sync(self):
-        connection = BaseHook.get_connection("test_conn")
-        return Response("It's new. [{}]".format(connection.password), mimetype="text")
+        connection = BaseHook.get_connection("sync-alert-rules")
+        return Response("It's new.\n\n{}".format(connection.extra), mimetype="text")
 
 
 

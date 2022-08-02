@@ -1,3 +1,4 @@
+PySheets==1.0.3
 apache-airflow>=1.10.12
 dateparser==1.0.0
 importlib_metadata==1.7.0
