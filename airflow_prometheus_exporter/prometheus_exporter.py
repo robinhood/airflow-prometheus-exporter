@@ -41,7 +41,7 @@ def session_scope(session):
         session.close()
 
 
-class UTCDateTime(TypeDecorator):
+class UTCDateTime(types.TypeDecorator):
     impl = DateTime
     cache_ok = True
 
