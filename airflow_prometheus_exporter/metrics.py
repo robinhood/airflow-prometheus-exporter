@@ -350,7 +350,7 @@ def get_latest_successful_dag_run(dag_model, dag_run, column_name=False, session
     query = (
         session.query(
             latest_successful_run.c.dag_id,
-            latest_successful_run.c.execution_date,
+            latest_successful_run.c.max_execution_date,
         )
         .join(dag_model, dag_model.dag_id == latest_successful_run.c.dag_id)
         .filter(
@@ -393,7 +393,7 @@ def get_latest_successful_task_instance(
         session.query(
             latest_successful_run.c.dag_id,
             latest_successful_run.c.task_id,
-            latest_successful_run.c.execution_date,
+            latest_successful_run.c.max_execution_date,
         )
         .join(dag_model, dag_model.dag_id == latest_successful_run.c.dag_id)
         .filter(
