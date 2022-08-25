@@ -311,11 +311,11 @@ class RBACMetrics(BaseView):
         return Response(generate_latest(), mimetype="text")
 
     @expose("/ddns/dag_run/")
-    def sync(self):
+    def dag_run(self):
         return Response("Hey, im here", mimetype="text")
 
     @expose("/ddns/task_instance/")
-    def sync(self):
+    def task_instance(self):
         return Response("Hey, im here", mimetype="text")
 
 
