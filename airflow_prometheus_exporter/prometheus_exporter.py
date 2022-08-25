@@ -310,10 +310,13 @@ class RBACMetrics(BaseView):
     def list(self):
         return Response(generate_latest(), mimetype="text")
 
-    @expose("/sync/")
+    @expose("/ddns/dag_run/")
     def sync(self):
-        connection = BaseHook.get_connection("sync-alert-rules")
-        return Response("It's new.\n\n{}".format(connection.extra), mimetype="text")
+        return Response("Hey, im here", mimetype="text")
+
+    @expose("/ddns/task_instance/")
+    def sync(self):
+        return Response("Hey, im here", mimetype="text")
 
 
 
