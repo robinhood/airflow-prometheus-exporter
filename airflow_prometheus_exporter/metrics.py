@@ -404,6 +404,43 @@ def upsert_auxiliary_info(delay_alert_auxiliary_info, upsert_dict, session=None)
 
 
 @provide_session
+def get_latest_successful_dag_run(dag_model, dag_run, session=None):
+    latest_successful_run = (
+        session.query(
+            dag_run.dag_id, dag_run.execution_date
+        )
+        .add_column(
+            func.row_number().over(
+                partition_by=dag_run.dag_id,
+                order_by=desc(dag_run.execution_date)
+            ).label("row_number_column")
+        )
+        .filter(
+            dag_run.execution_date > get_min_date(),
+            dag_run.external_trigger == False,
+            dag_run.state == "success",
+            dag_run.row_number_column == 1
+        )
+        .subquery()
+    )
+
+    query = (
+        session.query(
+            latest_successful_run.c.dag_id,
+            latest_successful_run.c.state,
+            latest_successful_run.c.count,
+            dag_model.owners,
+        )
+        .join(dag_model, dag_model.dag_id == latest_successful_run.c.dag_id)
+        .filter(dag_model.is_active == True, dag_model.is_paused == False)
+        .all()
+    )
+
+    for r in query:
+        yield r
+
+
+@provide_session
 def get_sla_miss(
     delay_alert_metadata,
     delay_alert_auxiliary_info,

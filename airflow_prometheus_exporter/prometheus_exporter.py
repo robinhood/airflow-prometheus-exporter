@@ -18,19 +18,20 @@ from airflow.settings import Session
 from airflow_prometheus_exporter.xcom_config import load_xcom_config
 
 from .metrics import (
-    get_dag_state_info,
-    get_dag_duration_info,
-    get_task_state_info,
-    get_task_failure_counts,
-    get_xcom_params,
+    MISSING
     extract_xcom_parameter,
-    get_task_duration_info,
+    get_dag_duration_info,
     get_dag_scheduler_delay,
-    get_task_scheduler_delay,
+    get_dag_state_info,
+    get_latest_successful_dag_run,
     get_num_queued_tasks,
     get_sla_miss,
+    get_task_duration_info,
+    get_task_failure_counts,
+    get_task_scheduler_delay,
+    get_task_state_info,
     get_unmonitored_dag,
-    MISSING
+    get_xcom_params,
 )
 
 
@@ -312,6 +313,9 @@ class RBACMetrics(BaseView):
 
     @expose("/ddns/dag_run/")
     def dag_run(self):
+        r = get_latest_successful_dag_run()
+        for r in get_unmonitored_dag(DagModel, DelayAlertMetadata):
+            unmonitored_dag_metric.add_metric([r.dag_id], True)
         return Response("Hey, im here", mimetype="text")
 
     @expose("/ddns/task_instance/")
