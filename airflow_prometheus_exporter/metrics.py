@@ -375,20 +375,20 @@ def get_latest_successful_task_instance(
 ):
     latest_successful_run = (
         session.query(
-            task_instance.dag_id, task_instance.task_id, task_intance.execution_date
+            task_instance.dag_id, task_instance.task_id, task_instance.execution_date
         )
         .add_column(
             func.row_number()
             .over(
-                partition_by=(task_intance.dag_id, task_intance.task_id),
+                partition_by=(task_instance.dag_id, task_instance.task_id),
                 order_by=desc(task_instance.execution_date),
             )
             .label("row_number_column")
         )
         .filter(
-            task_intance.execution_date > get_min_date(),
-            task_intance.external_trigger == False,
-            task_intance.state == State.SUCCESS,
+            task_instance.execution_date > get_min_date(),
+            task_instance.external_trigger == False,
+            task_instance.state == State.SUCCESS,
         )
         .subquery()
     )
