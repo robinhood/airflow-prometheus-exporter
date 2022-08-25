@@ -396,7 +396,7 @@ def upsert_auxiliary_info(delay_alert_auxiliary_info, upsert_dict, session=None)
 
 
 @provide_session
-def get_latest_successful_dag_run(dag_model, dag_run, colum_name=False, session=None):
+def get_latest_successful_dag_run(dag_model, dag_run, column_name=False, session=None):
     latest_successful_run = (
         session.query(dag_run.dag_id, dag_run.execution_date)
         .add_column(
