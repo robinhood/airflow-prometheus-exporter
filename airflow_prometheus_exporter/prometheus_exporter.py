@@ -24,73 +24,14 @@ from .metrics import (
     get_dag_scheduler_delay,
     get_dag_state_info,
     get_latest_successful_dag_run,
+    get_latest_successful_task_instance,
     get_num_queued_tasks,
-    get_sla_miss,
     get_task_duration_info,
     get_task_failure_counts,
     get_task_scheduler_delay,
     get_task_state_info,
-    get_unmonitored_dag,
     get_xcom_params,
 )
-
-
-@contextmanager
-def session_scope(session):
-    """Provide a transactional scope around a series of operations."""
-    try:
-        yield session
-    finally:
-        session.close()
-
-
-class UTCDateTime(types.TypeDecorator):
-    impl = DateTime
-    cache_ok = True
-
-    def process_bind_param(self, value, dialect):
-        if value is not None:
-            if not value.tzinfo:
-                raise TypeError("tzinfo is required")
-            value = value.astimezone(datetime.timezone.utc).replace(tzinfo=None)
-        return value
-
-    def process_result_value(self, value, dialect):
-        if value is not None:
-            value = value.replace(tzinfo=datetime.timezone.utc)
-        return value
-
-
-with session_scope(Session) as session:
-    engine = session.get_bind()
-    engine.echo = True
-    Base = declarative_base(session.get_bind())
-
-    class DelayAlertMetadata(Base):
-        __tablename__ = "delay_alert_metadata"
-        dag_id = Column(String(250), primary_key=True)
-        task_id = Column(String(250), primary_key=True, nullable=True)
-        sla_interval = Column(String(64), primary_key=True)
-        sla_time = Column(String(5), primary_key=True, nullable=True)
-        affected_pipeline = Column(Text, nullable=True)
-        alert_name = Column(String(250), nullable=True)
-        alert_target = Column(String(250), nullable=True)
-        group_title = Column(Text, nullable=True)
-        inhibit_rule = Column(Text, nullable=True)
-        link = Column(Text, nullable=True)
-        note = Column(Text, nullable=True)
-        ready = Column(Boolean, nullable=True)
-
-    class DelayAlertAuxiliaryInfo(Base):
-        __tablename__ = "delay_alert_auxiliary_info"
-        dag_id = Column(String(250), primary_key=True)
-        task_id = Column(String(250), primary_key=True, nullable=True)
-        sla_interval = Column(String(64), primary_key=True)
-        sla_time = Column(String(5), primary_key=True, nullable=True)
-        latest_successful_run = Column(UTCDateTime)
-        latest_sla_miss_state = Column(Boolean)
-
-    Base.metadata.create_all(checkfirst=True)
 
 
 class MetricsCollector(object):
@@ -241,54 +182,6 @@ class MetricsCollector(object):
         num_queued_tasks_metric.add_metric([], num_queued_tasks)
         yield num_queued_tasks_metric
 
-        sla_miss_metric = GaugeMetricFamily(
-            "airflow_sla_miss",
-            "Airflow DAGS missing the sla",
-            labels=[
-                "dag_id",
-                "task_id",
-                "affected_pipeline",
-                "alert_name",
-                "alert_target",
-                "group_title",
-                "inhibit_rule",
-                "link",
-                "sla_interval",
-                "sla_time",
-            ],
-        )
-
-        for alert in get_sla_miss(
-            DelayAlertMetadata, DelayAlertAuxiliaryInfo, DagModel, DagRun, TaskInstance
-        ):
-            sla_miss_metric.add_metric(
-                [
-                    alert["dag_id"],
-                    alert["task_id"],
-                    alert["affected_pipeline"],
-                    alert["alert_name"],
-                    alert["alert_target"],
-                    alert["group_title"],
-                    alert["inhibit_rule"],
-                    alert["link"],
-                    alert["sla_interval"],
-                    alert["sla_time"],
-                ],
-                alert["sla_miss"],
-            )
-
-        yield sla_miss_metric
-
-        unmonitored_dag_metric = GaugeMetricFamily(
-            "airflow_unmonitored_dag",
-            "Airflow Unmonitored DAG",
-            labels=["dag_id"],
-        )
-
-        for r in get_unmonitored_dag(DagModel, DelayAlertMetadata):
-            unmonitored_dag_metric.add_metric([r.dag_id], True)
-        yield unmonitored_dag_metric
-
         extraction_time = GaugeMetricFamily(
             "exporter_extraction_duration",
             "Duration of exporter extraction in seconds",
@@ -318,7 +211,12 @@ class RBACMetrics(BaseView):
 
     @expose("/ddns/task_instance/")
     def task_instance(self):
-        return Response("Hey, im here", mimetype="text")
+        return Response(
+            get_latest_successful_task_instance(
+                DagModel, TaskInstance, column_name=True
+            ),
+            mimetype="text",
+        )
 
 
 # Metrics View for Flask app builder used in airflow with rbac enabled

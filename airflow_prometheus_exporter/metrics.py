@@ -2,12 +2,8 @@ import datetime
 import json
 import os
 import pickle
-import logging
 
-from dateutil import tz
-from pytimeparse import parse as pytime_parse
-from sqlalchemy import Column, String, Text, Boolean, and_, func, desc
-from sqlalchemy.sql.expression import null
+from sqlalchemy import String, and_, desc func,
 
 from airflow.configuration import conf
 from airflow.utils.log.logging_mixin import LoggingMixin
@@ -15,37 +11,9 @@ from airflow.utils.state import State
 from airflow.utils.session import provide_session
 
 CANARY_DAG = "canary_dag"
-RETENTION_TIME = os.environ.get("PROMETHEUS_METRICS_DAYS", 21)
-TIMEZONE = conf.get("core", "default_timezone")
+RETENTION_TIME = os.environ.get("PROMETHEUS_METRICS_DAYS", 28)
 TIMEZONE_LA = "America/Los_Angeles"
 MISSING = "n/a"
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-def sla_check(sla_interval, sla_time, max_execution_date, latest_sla_miss_state):
-    utc_datetime = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
-
-    if sla_time:
-        # Convert user defined SLA time to local datetime.
-        local_datetime = utc_datetime.astimezone(tz.gettz(TIMEZONE_LA))
-        sla_datetime = datetime.datetime.combine(
-            local_datetime.date(),
-            datetime.datetime.strptime(sla_time, "%H:%M").time(),
-        ).replace(tzinfo=tz.gettz(TIMEZONE_LA))
-    else:
-        # If no defined SLA time, meaning always run SLA check.
-        sla_datetime = utc_datetime
-
-    interval_in_second = pytime_parse(sla_interval)
-    checkpoint = sla_datetime - datetime.timedelta(seconds=interval_in_second)
-
-    # Check SLA miss when it's SLA time.
-    if utc_datetime >= sla_datetime:
-        return max_execution_date < checkpoint
-
-    # Use latest_sla_miss_state if it's before SLA time. Default to False
-    return latest_sla_miss_state or False
 
 
 def get_min_date():
@@ -363,42 +331,6 @@ def get_num_queued_tasks(task_instance, session=None):
 
 
 @provide_session
-def upsert_auxiliary_info(delay_alert_auxiliary_info, upsert_dict, session=None):
-    for k, v in upsert_dict.items():
-        dag_id, task_id, sla_interval, sla_time = k
-        value = v["value"]
-        insert = v["insert"]
-        latest_successful_run = value["max_execution_date"]
-        latest_sla_miss_state = value["sla_miss"]
-
-        if insert:
-            session.add(
-                delay_alert_auxiliary_info(
-                    dag_id=dag_id,
-                    task_id=task_id,
-                    sla_interval=sla_interval,
-                    sla_time=sla_time,
-                    latest_successful_run=latest_successful_run,
-                    latest_sla_miss_state=latest_sla_miss_state,
-                )
-            )
-        else:
-            session.query(delay_alert_auxiliary_info).filter(
-                delay_alert_auxiliary_info.dag_id == dag_id,
-                delay_alert_auxiliary_info.task_id == task_id,
-                delay_alert_auxiliary_info.sla_interval == sla_interval,
-                delay_alert_auxiliary_info.sla_time == sla_time,
-            ).update(
-                {
-                    delay_alert_auxiliary_info.latest_successful_run: latest_successful_run,
-                    delay_alert_auxiliary_info.latest_sla_miss_state: latest_sla_miss_state,
-                }
-            )
-    session.flush()
-    session.commit()
-
-
-@provide_session
 def get_latest_successful_dag_run(dag_model, dag_run, column_name=False, session=None):
     latest_successful_run = (
         session.query(dag_run.dag_id, dag_run.execution_date)
@@ -410,7 +342,7 @@ def get_latest_successful_dag_run(dag_model, dag_run, column_name=False, session
         .filter(
             dag_run.execution_date > get_min_date(),
             dag_run.external_trigger == False,
-            dag_run.state == "success",
+            dag_run.state == State.SUCCESS,
         )
         .subquery()
     )
@@ -429,210 +361,55 @@ def get_latest_successful_dag_run(dag_model, dag_run, column_name=False, session
         .all()
     )
 
-    logger.info("asdf")
-    #query.statement.compile(compile_kwargs={"literal_binds": True}))
-
     if column_name:
-        yield ",".join(["dag_id", "execution_date"])
+        yield ",".join(["dag_id", "execution_date"]) + "\n"
     for r in query:
-        yield ",".join([r.dag_id, r.execution_date.strftime("%Y-%m-%d %H:%M:%S")])
+        yield ",".join(
+            [r.dag_id, r.execution_date.strftime("%Y-%m-%d %H:%M:%S")]
+        ) + "\n"
 
 
 @provide_session
-def get_sla_miss(
-    delay_alert_metadata,
-    delay_alert_auxiliary_info,
-    dag_model,
-    dag_run,
-    task_instance,
-    session=None,
+def get_latest_successful_task_instance(
+    dag_model, task_instance, column_name=False, session=None
 ):
-    active_alert_query = (
+    latest_successful_run = (
         session.query(
-            delay_alert_metadata.dag_id,
-            delay_alert_metadata.task_id,
-            delay_alert_metadata.sla_interval,
-            delay_alert_metadata.sla_time,
+            task_instance.dag_id, task_instance.task_id, task_intance.execution_date
         )
-        .join(dag_model, delay_alert_metadata.dag_id == dag_model.dag_id)
+        .add_column(
+            func.row_number()
+            .over(
+                partition_by=(task_intance.dag_id, task_intance.task_id),
+                order_by=desc(task_instance.execution_date),
+            )
+            .label("row_number_column")
+        )
         .filter(
-            delay_alert_metadata.ready == True,
-            dag_model.is_active == True,
-            dag_model.is_paused == False,
-        )
-        .group_by(
-            delay_alert_metadata.dag_id,
-            delay_alert_metadata.task_id,
-            delay_alert_metadata.sla_interval,
-            delay_alert_metadata.sla_time,
+            task_intance.execution_date > get_min_date(),
+            task_intance.external_trigger == False,
+            task_intance.state == State.SUCCESS,
         )
         .subquery()
     )
 
-    # Gather the current max execution dates
-    dag_max_execution_date = (
-        session.query(
-            dag_run.dag_id,
-            null().label("task_id"),
-            func.max(dag_run.execution_date).label("execution_date"),
-        )
-        .join(
-            active_alert_query,
-            (dag_run.dag_id == active_alert_query.c.dag_id)
-            & (active_alert_query.c.task_id.is_(None)),
-        )
-        .filter(
-            dag_run.state == State.SUCCESS,
-            dag_run.end_date.isnot(None),
-            dag_run.execution_date > get_min_date(),
-        )
-        .group_by(dag_run.dag_id)
-    )
-
-    all_max_execution_date = (
-        session.query(
-            task_instance.dag_id,
-            task_instance.task_id,
-            func.max(dag_run.execution_date).label("execution_date"),
-        )
-        .join(
-            active_alert_query,
-            (task_instance.dag_id == active_alert_query.c.dag_id)
-            & (task_instance.task_id == active_alert_query.c.task_id),
-        )
-        .join(dag_run, task_instance.run_id == dag_run.run_id)
-        .filter(
-            task_instance.state == State.SUCCESS,
-            task_instance.end_date.isnot(None),
-            task_instance.execution_date > get_min_date(),
-        )
-        .group_by(
-            task_instance.dag_id,
-            task_instance.task_id,
-        )
-        .union(dag_max_execution_date)
-    )
-
-    max_execution_dates = {}
-    for r in all_max_execution_date:
-        key = (r.dag_id, r.task_id)
-        max_execution_dates[key] = r.execution_date
-
-    # Getting all alerts with auxiliary data
-    alert_query = (
-        session.query(
-            delay_alert_metadata.dag_id,
-            delay_alert_metadata.task_id,
-            delay_alert_metadata.sla_interval,
-            delay_alert_metadata.sla_time,
-            delay_alert_metadata.affected_pipeline,
-            delay_alert_metadata.alert_target,
-            delay_alert_metadata.alert_name,
-            delay_alert_metadata.group_title,
-            delay_alert_metadata.inhibit_rule,
-            delay_alert_metadata.link,
-            delay_alert_auxiliary_info.latest_successful_run,
-            delay_alert_auxiliary_info.latest_sla_miss_state,
-        )
-        .join(
-            active_alert_query,
-            and_(
-                delay_alert_metadata.dag_id == active_alert_query.c.dag_id,
-                func.coalesce(delay_alert_metadata.task_id, "n/a")
-                == func.coalesce(active_alert_query.c.task_id, "n/a"),
-                delay_alert_metadata.sla_interval == active_alert_query.c.sla_interval,
-                func.coalesce(delay_alert_metadata.sla_time, "n/a")
-                == func.coalesce(active_alert_query.c.sla_time, "n/a"),
-            ),
-        )
-        .join(
-            delay_alert_auxiliary_info,
-            and_(
-                delay_alert_metadata.dag_id == delay_alert_auxiliary_info.dag_id,
-                func.coalesce(delay_alert_metadata.task_id, "n/a")
-                == func.coalesce(delay_alert_auxiliary_info.task_id, "n/a"),
-                delay_alert_metadata.sla_interval
-                == delay_alert_auxiliary_info.sla_interval,
-                func.coalesce(delay_alert_metadata.sla_time, "n/a")
-                == func.coalesce(delay_alert_auxiliary_info.sla_time, "n/a"),
-            ),
-            isouter=True,
-        )
-    )
-
-    epoch = datetime.datetime.utcfromtimestamp(0).replace(tzinfo=datetime.timezone.utc)
-    upsert_dict = {}
-    for alert in alert_query:
-        key = (alert.dag_id, alert.task_id)
-        insert = update = False
-
-        max_execution_date = max_execution_dates.get(key, epoch)
-        if alert.latest_successful_run is None:
-            insert = True
-        elif max_execution_date > alert.latest_successful_run:
-            update = True
-        else:
-            max_execution_date = alert.latest_successful_run
-
-        sla_miss = sla_check(
-            alert.sla_interval,
-            alert.sla_time,
-            max_execution_date,
-            alert.latest_sla_miss_state,
-        )
-
-        if insert or update or sla_miss != alert.latest_sla_miss_state:
-            upsert_dict_key = key + (alert.sla_interval, alert.sla_time)
-            upsert_dict[upsert_dict_key] = {
-                "value": {
-                    "max_execution_date": max_execution_date,
-                    "sla_miss": sla_miss,
-                },
-                "insert": insert,
-            }
-
-        alert_name = alert.alert_name
-        if alert_name is None:
-            alert_name = alert.dag_id
-            if alert.task_id:
-                alert_name += "." + alert.task_id
-
-        if sla_miss:
-            yield {
-                "dag_id": alert.dag_id,
-                "task_id": alert.task_id or MISSING,
-                "affected_pipeline": alert.affected_pipeline or MISSING,
-                "alert_name": alert_name,
-                "alert_target": alert.alert_target or MISSING,
-                "group_title": alert.group_title or alert_name,
-                "inhibit_rule": alert.inhibit_rule or MISSING,
-                "link": alert.link or MISSING,
-                "sla_interval": alert.sla_interval,
-                "sla_miss": sla_miss,
-                "sla_time": alert.sla_time or MISSING,
-            }
-
-    upsert_auxiliary_info(delay_alert_auxiliary_info, upsert_dict)
-
-
-@provide_session
-def get_unmonitored_dag(dag_model, delay_alert_metadata, session=None):
     query = (
         session.query(
-            dag_model.dag_id,
+            latest_successful_run.c.dag_id,
+            latest_successful_run.c.execution_date,
         )
-        .join(
-            delay_alert_metadata,
-            dag_model.dag_id == delay_alert_metadata.dag_id,
-            isouter=True,
-        )
+        .join(dag_model, dag_model.dag_id == latest_successful_run.c.dag_id)
         .filter(
             dag_model.is_active == True,
             dag_model.is_paused == False,
-            delay_alert_metadata.dag_id.is_(None),
+            latest_successful_run.c.row_number_column == 1,
         )
-        .group_by(dag_model.dag_id)
+        .all()
     )
 
+    if column_name:
+        yield ",".join(["dag_id", "task_id", "execution_date"]) + "\n"
     for r in query:
-        yield r
+        yield ",".join(
+            [r.dag_id, r.task_id, r.execution_date.strftime("%Y-%m-%d %H:%M:%S")]
+        ) + "\n"
