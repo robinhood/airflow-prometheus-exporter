@@ -1,5 +1,6 @@
 apache-airflow>=1.10.12
 dateparser==1.0.0
+google-auth==2.9.0 
 importlib_metadata==1.7.0
 prometheus_client==0.8.0
 pygsheets==2.0.5
