@@ -5,7 +5,7 @@ import pickle
 
 from dateutil import tz
 from pytimeparse import parse as pytime_parse
-from sqlalchemy import Column, String, Text, Boolean, and_, func
+from sqlalchemy import Column, String, Text, Boolean, and_, func, desc
 from sqlalchemy.sql.expression import null
 
 from airflow.configuration import conf
