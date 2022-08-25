@@ -18,7 +18,7 @@ from airflow.settings import Session
 from airflow_prometheus_exporter.xcom_config import load_xcom_config
 
 from .metrics import (
-    MISSING
+    MISSING,
     extract_xcom_parameter,
     get_dag_duration_info,
     get_dag_scheduler_delay,
@@ -31,7 +31,7 @@ from .metrics import (
     get_task_scheduler_delay,
     get_task_state_info,
     get_unmonitored_dag,
-    get_xcom_params,
+    get_xcom_params
 )
 
 
