@@ -429,7 +429,8 @@ def get_latest_successful_dag_run(dag_model, dag_run, column_name=False, session
         .all()
     )
 
-    logger.info(query.statement.compile(compile_kwargs={"literal_binds": True}))
+    logger.info("asdf")
+    #query.statement.compile(compile_kwargs={"literal_binds": True}))
 
     if column_name:
         yield ",".join(["dag_id", "execution_date"])

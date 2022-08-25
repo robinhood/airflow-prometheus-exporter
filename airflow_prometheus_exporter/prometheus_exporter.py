@@ -62,6 +62,8 @@ class UTCDateTime(types.TypeDecorator):
 
 
 with session_scope(Session) as session:
+    engine = session.get_bind()
+    engine.echo = True
     Base = declarative_base(session.get_bind())
 
     class DelayAlertMetadata(Base):
