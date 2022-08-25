@@ -361,7 +361,7 @@ def get_latest_successful_dag_run(dag_model, dag_run, column_name=False, session
     )
 
     if column_name:
-        yield ",".join(["dag_id", execution_date]) + "\n"
+        yield ",".join(["dag_id", max_execution_date]) + "\n"
     for r in query:
         yield ",".join(
             [r.dag_id, r.max_execution_date.strftime("%Y-%m-%d %H:%M:%S")]
