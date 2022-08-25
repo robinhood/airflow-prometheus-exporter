@@ -331,7 +331,7 @@ def get_num_queued_tasks(task_instance, session=None):
 
 
 @provide_session
-def get_active_dag_subquery(session=None):
+def get_active_dag_subquery(dag_model, session=None):
     subquery = (
         session.query(
             dag_model.dag_id
@@ -348,7 +348,7 @@ def get_active_dag_subquery(session=None):
 
 @provide_session
 def get_latest_successful_dag_run(dag_model, dag_run, column_name=False, session=None):
-    active_dag = get_active_dag_subquery()
+    active_dag = get_active_dag_subquery(dag_model)
 
     max_execution_date = "max_execution_date"
     query = (
@@ -377,7 +377,7 @@ def get_latest_successful_dag_run(dag_model, dag_run, column_name=False, session
 def get_latest_successful_task_instance(
     dag_model, task_instance, column_name=False, session=None
 ):
-    active_dag = get_active_dag_subquery()
+    active_dag = get_active_dag_subquery(dag_model)
 
     max_execution_date = "max_execution_date"
     query = (
