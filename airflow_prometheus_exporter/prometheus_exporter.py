@@ -313,8 +313,7 @@ class RBACMetrics(BaseView):
 
     @expose("/ddns/dag_run/")
     def dag_run(self):
-        for r in  get_latest_successful_dag_run(DagModel, DagRun, column_name=True):
-        return Response("Hey, im here", mimetype="text")
+        return Response(get_latest_successful_dag_run(DagModel, DagRun, column_name=True), mimetype="text")
 
     @expose("/ddns/task_instance/")
     def task_instance(self):
