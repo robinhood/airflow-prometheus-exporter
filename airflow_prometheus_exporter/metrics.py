@@ -160,9 +160,7 @@ def get_task_state_info(dag_run, task_instance, dag_model, session=None):
             task_instance.state,
             func.count(task_instance.dag_id).label("value"),
         )
-        .join(
-            dag_run, task_instance.run_id == dag_run.run_id
-        )
+        .join(dag_run, task_instance.run_id == dag_run.run_id)
         .group_by(task_instance.dag_id, task_instance.task_id, task_instance.state)
         .filter(dag_run.execution_date > get_min_date())
         .subquery()
@@ -272,9 +270,7 @@ def get_task_duration_info(dag_model, dag_run, task_instance, session=None):
             task_instance.end_date,
             dag_run.execution_date,
         )
-        .join(
-            dag_run, task_instance.run_id == dag_run.run_id
-        )
+        .join(dag_run, task_instance.run_id == dag_run.run_id)
         .join(
             max_execution_dt_query,
             and_(
@@ -321,13 +317,11 @@ def get_task_scheduler_delay(dag_run, task_instance, session=None):
         session.query(
             task_instance.queue, func.max(task_instance.start_date).label("max_start")
         )
-        .join(
-            dag_run, task_instance.run_id == dag_run.run_id
-        )
+        .join(dag_run, task_instance.run_id == dag_run.run_id)
         .filter(
             task_instance.dag_id == CANARY_DAG,
             task_instance.queued_dttm.isnot(None),
-            dag_run.execution_date > get_min_date()
+            dag_run.execution_date > get_min_date(),
         )
         .group_by(task_instance.queue)
         .subquery()
@@ -346,9 +340,7 @@ def get_task_scheduler_delay(dag_run, task_instance, session=None):
                 task_instance.start_date == task_status_query.c.max_start,
             ),
         )
-        .join(
-            dag_run, task_instance.run_id == dag_run.run_id
-        )
+        .join(dag_run, task_instance.run_id == dag_run.run_id)
         .filter(task_instance.dag_id == CANARY_DAG)  # Redundant, for performance.
         .all()
     )
@@ -406,20 +398,17 @@ def upsert_auxiliary_info(delay_alert_auxiliary_info, upsert_dict, session=None)
 @provide_session
 def get_latest_successful_dag_run(dag_model, dag_run, colum_name=False, session=None):
     latest_successful_run = (
-        session.query(
-            dag_run.dag_id, dag_run.execution_date
-        )
+        session.query(dag_run.dag_id, dag_run.execution_date)
         .add_column(
-            func.row_number().over(
-                partition_by=dag_run.dag_id,
-                order_by=desc(dag_run.execution_date)
-            ).label("row_number_column")
+            func.row_number()
+            .over(partition_by=dag_run.dag_id, order_by=desc(dag_run.execution_date))
+            .label("row_number_column")
         )
         .filter(
             dag_run.execution_date > get_min_date(),
             dag_run.external_trigger == False,
             dag_run.state == "success",
-            dag_run.row_number_column == 1
+            dag_run.row_number_column == 1,
         )
         .subquery()
     )
@@ -502,9 +491,7 @@ def get_sla_miss(
             (task_instance.dag_id == active_alert_query.c.dag_id)
             & (task_instance.task_id == active_alert_query.c.task_id),
         )
-        .join(
-            dag_run, task_instance.run_id == dag_run.run_id
-        )
+        .join(dag_run, task_instance.run_id == dag_run.run_id)
         .filter(
             task_instance.state == State.SUCCESS,
             task_instance.end_date.isnot(None),

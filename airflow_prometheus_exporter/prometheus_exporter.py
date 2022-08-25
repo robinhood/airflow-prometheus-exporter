@@ -31,7 +31,7 @@ from .metrics import (
     get_task_scheduler_delay,
     get_task_state_info,
     get_unmonitored_dag,
-    get_xcom_params
+    get_xcom_params,
 )
 
 
@@ -52,9 +52,7 @@ class UTCDateTime(types.TypeDecorator):
         if value is not None:
             if not value.tzinfo:
                 raise TypeError("tzinfo is required")
-            value = value.astimezone(datetime.timezone.utc).replace(
-                tzinfo=None
-            )
+            value = value.astimezone(datetime.timezone.utc).replace(tzinfo=None)
         return value
 
     def process_result_value(self, value, dialect):
@@ -81,7 +79,6 @@ with session_scope(Session) as session:
         note = Column(Text, nullable=True)
         ready = Column(Boolean, nullable=True)
 
-
     class DelayAlertAuxiliaryInfo(Base):
         __tablename__ = "delay_alert_auxiliary_info"
         dag_id = Column(String(250), primary_key=True)
@@ -92,8 +89,6 @@ with session_scope(Session) as session:
         latest_sla_miss_state = Column(Boolean)
 
     Base.metadata.create_all(checkfirst=True)
-
-
 
 
 class MetricsCollector(object):
@@ -189,7 +184,6 @@ class MetricsCollector(object):
             dag_duration.add_metric([dag.dag_id], dag_duration_value)
         yield dag_duration
 
-
         # Scheduler Metrics
         dag_scheduler_delay = GaugeMetricFamily(
             "airflow_dag_scheduler_delay",
@@ -262,7 +256,9 @@ class MetricsCollector(object):
             ],
         )
 
-        for alert in get_sla_miss(DelayAlertMetadata, DelayAlertAuxiliaryInfo, DagModel, DagRun, TaskInstance):
+        for alert in get_sla_miss(
+            DelayAlertMetadata, DelayAlertAuxiliaryInfo, DagModel, DagRun, TaskInstance
+        ):
             sla_miss_metric.add_metric(
                 [
                     alert["dag_id"],
@@ -291,15 +287,15 @@ class MetricsCollector(object):
             unmonitored_dag_metric.add_metric([r.dag_id], True)
         yield unmonitored_dag_metric
 
-
         extraction_time = GaugeMetricFamily(
             "exporter_extraction_duration",
             "Duration of exporter extraction in seconds",
             labels=["elapsed_time"],
         )
 
-        extraction_time.add_metric(['elapsed_time'], time.monotonic() - start_time)
+        extraction_time.add_metric(["elapsed_time"], time.monotonic() - start_time)
         yield extraction_time
+
 
 REGISTRY.register(MetricsCollector())
 
@@ -313,12 +309,14 @@ class RBACMetrics(BaseView):
 
     @expose("/ddns/dag_run/")
     def dag_run(self):
-        return Response(get_latest_successful_dag_run(DagModel, DagRun, column_name=True), mimetype="text")
+        return Response(
+            get_latest_successful_dag_run(DagModel, DagRun, column_name=True),
+            mimetype="text",
+        )
 
     @expose("/ddns/task_instance/")
     def task_instance(self):
         return Response("Hey, im here", mimetype="text")
-
 
 
 # Metrics View for Flask app builder used in airflow with rbac enabled
