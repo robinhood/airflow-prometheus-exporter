@@ -408,7 +408,6 @@ def get_latest_successful_dag_run(dag_model, dag_run, column_name=False, session
             dag_run.execution_date > get_min_date(),
             dag_run.external_trigger == False,
             dag_run.state == "success",
-            dag_run.row_number_column == 1,
         )
         .subquery()
     )
@@ -419,7 +418,11 @@ def get_latest_successful_dag_run(dag_model, dag_run, column_name=False, session
             latest_successful_run.c.execution_date,
         )
         .join(dag_model, dag_model.dag_id == latest_successful_run.c.dag_id)
-        .filter(dag_model.is_active == True, dag_model.is_paused == False)
+        .filter(
+            dag_model.is_active == True,
+            dag_model.is_paused == False,
+            latest_successful_run.c.row_number_column == 1,
+        )
         .all()
     )
 
