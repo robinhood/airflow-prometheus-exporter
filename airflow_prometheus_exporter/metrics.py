@@ -404,7 +404,7 @@ def upsert_auxiliary_info(delay_alert_auxiliary_info, upsert_dict, session=None)
 
 
 @provide_session
-def get_latest_successful_dag_run(dag_model, dag_run, session=None):
+def get_latest_successful_dag_run(dag_model, dag_run, colum_name=False, session=None):
     latest_successful_run = (
         session.query(
             dag_run.dag_id, dag_run.execution_date
@@ -427,17 +427,17 @@ def get_latest_successful_dag_run(dag_model, dag_run, session=None):
     query = (
         session.query(
             latest_successful_run.c.dag_id,
-            latest_successful_run.c.state,
-            latest_successful_run.c.count,
-            dag_model.owners,
+            latest_successful_run.c.execution_date,
         )
         .join(dag_model, dag_model.dag_id == latest_successful_run.c.dag_id)
         .filter(dag_model.is_active == True, dag_model.is_paused == False)
         .all()
     )
 
+    if column_name:
+        yield ",".join(["dag_id", "execution_date"])
     for r in query:
-        yield r
+        yield ",".join([r.dag_id, r.execution_date])
 
 
 @provide_session

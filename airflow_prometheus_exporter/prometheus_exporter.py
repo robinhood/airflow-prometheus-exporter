@@ -313,9 +313,7 @@ class RBACMetrics(BaseView):
 
     @expose("/ddns/dag_run/")
     def dag_run(self):
-        r = get_latest_successful_dag_run()
-        for r in get_unmonitored_dag(DagModel, DelayAlertMetadata):
-            unmonitored_dag_metric.add_metric([r.dag_id], True)
+        for r in  get_latest_successful_dag_run(DagModel, DagRun, column_name=True):
         return Response("Hey, im here", mimetype="text")
 
     @expose("/ddns/task_instance/")
