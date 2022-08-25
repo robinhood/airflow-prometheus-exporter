@@ -331,7 +331,7 @@ def get_num_queued_tasks(task_instance, session=None):
 
 
 @provide_session
-def get_active_dag_subquery():
+def get_active_dag_subquery(session=None):
     subquery = (
         session.query(
             dag_model.dag_id
