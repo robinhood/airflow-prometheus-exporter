@@ -2,6 +2,7 @@ import datetime
 import json
 import os
 import pickle
+import logging
 
 from dateutil import tz
 from pytimeparse import parse as pytime_parse
@@ -19,6 +20,8 @@ TIMEZONE = conf.get("core", "default_timezone")
 TIMEZONE_LA = "America/Los_Angeles"
 MISSING = "n/a"
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def sla_check(sla_interval, sla_time, max_execution_date, latest_sla_miss_state):
     utc_datetime = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
@@ -425,6 +428,8 @@ def get_latest_successful_dag_run(dag_model, dag_run, column_name=False, session
         )
         .all()
     )
+
+    logger.info(query.statement.compile(compile_kwargs={"literal_binds": True}))
 
     if column_name:
         yield ",".join(["dag_id", "execution_date"])
