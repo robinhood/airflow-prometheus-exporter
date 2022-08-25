@@ -3,7 +3,7 @@ import json
 import os
 import pickle
 
-from sqlalchemy import String, and_, desc func,
+from sqlalchemy import and_, desc, func
 
 from airflow.configuration import conf
 from airflow.utils.log.logging_mixin import LoggingMixin
