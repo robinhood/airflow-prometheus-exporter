@@ -356,7 +356,6 @@ def get_latest_successful_dag_run(dag_model, dag_run, column_name=False, session
         .filter(
             dag_model.is_active == True,
             dag_model.is_paused == False,
-            latest_successful_run.c.row_number_column == 1,
         )
         .all()
     )
@@ -382,7 +381,6 @@ def get_latest_successful_task_instance(
         )
         .filter(
             task_instance.execution_date > get_min_date(),
-            task_instance.external_trigger == False,
             task_instance.state == State.SUCCESS,
         )
         .group_by(task_instance.dag_id, task_instance.task_id)
@@ -399,7 +397,6 @@ def get_latest_successful_task_instance(
         .filter(
             dag_model.is_active == True,
             dag_model.is_paused == False,
-            latest_successful_run.c.row_number_column == 1,
         )
         .all()
     )
