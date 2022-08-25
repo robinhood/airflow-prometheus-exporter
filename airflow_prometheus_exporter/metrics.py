@@ -331,32 +331,37 @@ def get_num_queued_tasks(task_instance, session=None):
 
 
 @provide_session
-def get_latest_successful_dag_run(dag_model, dag_run, column_name=False, session=None):
-    max_execution_date = "max_execution_date"
-    latest_successful_run = (
+def get_active_dag_subquery():
+    subquery = (
         session.query(
-            dag_run.dag_id, 
-            func.max(dag_run.execution_date).label(max_execution_date)
+            dag_model.dag_id
         )
-        .filter(
-            dag_run.execution_date > get_min_date(),
-            dag_run.external_trigger == False,
-            dag_run.state == State.SUCCESS,
-        )
-        .group_by(dag_run.dag_id)
-        .subquery()
-    )
-
-    query = (
-        session.query(
-            latest_successful_run.c.dag_id,
-            latest_successful_run.c.max_execution_date,
-        )
-        .join(dag_model, dag_model.dag_id == latest_successful_run.c.dag_id)
         .filter(
             dag_model.is_active == True,
             dag_model.is_paused == False,
         )
+        .subquery()
+    )
+
+    return subquery
+
+
+@provide_session
+def get_latest_successful_dag_run(dag_model, dag_run, column_name=False, session=None):
+    active_dag = get_active_dag_subquery()
+
+    max_execution_date = "max_execution_date"
+    query = (
+        session.query(
+            dag_run.dag_id,
+            func.max(dag_run.execution_date).label(max_execution_date)
+        )
+        .join(dag_run, dag_run.dag_id == active_dag.c.dag_id)
+        .filter(
+            dag_run.execution_date > get_min_date(),
+            dag_run.state == State.SUCCESS,
+        )
+        .group_by(dag_run.dag_id)
         .all()
     )
 
@@ -372,16 +377,7 @@ def get_latest_successful_dag_run(dag_model, dag_run, column_name=False, session
 def get_latest_successful_task_instance(
     dag_model, task_instance, column_name=False, session=None
 ):
-    active_dag = (
-        session.query(
-            dag_model.dag_id
-        )
-        .filter(
-            dag_model.is_active == True,
-            dag_model.is_paused == False,
-        )
-        .subquery()
-    )
+    active_dag = get_active_dag_subquery()
 
     max_execution_date = "max_execution_date"
     query = (
@@ -398,34 +394,6 @@ def get_latest_successful_task_instance(
         .group_by(task_instance.dag_id, task_instance.task_id)
         .all()
     )
-
-    #latest_successful_run = (
-    #    session.query(
-    #        task_instance.dag_id,
-    #        task_instance.task_id,
-    #        func.max(task_instance.execution_date).label(max_execution_date)
-    #    )
-    #    .filter(
-    #        task_instance.execution_date > get_min_date(),
-    #        task_instance.state == State.SUCCESS,
-    #    )
-    #    .group_by(task_instance.dag_id, task_instance.task_id)
-    #    .subquery()
-    #)
-
-    #query = (
-    #    session.query(
-    #        latest_successful_run.c.dag_id,
-    #        latest_successful_run.c.task_id,
-    #        latest_successful_run.c.max_execution_date,
-    #    )
-    #    .join(dag_model, dag_model.dag_id == latest_successful_run.c.dag_id)
-    #    .filter(
-    #        dag_model.is_active == True,
-    #        dag_model.is_paused == False,
-    #    )
-    #    .all()
-    #)
 
     if column_name:
         yield ",".join(["dag_id", "task_id", max_execution_date]) + "\n"
