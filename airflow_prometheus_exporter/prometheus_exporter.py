@@ -11,7 +11,7 @@ from prometheus_client.core import GaugeMetricFamily
 from airflow.hooks.base import BaseHook
 from airflow.models import DagModel, DagRun, TaskFail, TaskInstance, XCom
 from airflow.plugins_manager import AirflowPlugin
-from airflow.settings import Session
+#from airflow.settings import Session
 from airflow_prometheus_exporter.xcom_config import load_xcom_config
 
 from .metrics import (
