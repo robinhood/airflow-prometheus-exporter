@@ -30,16 +30,16 @@ from .metrics import (
     get_xcom_params,
 )
 
-@contextmanager
-def session_scope(session):
-    try:
-        yield session
-    finally:
-        session.close()
-
-with session_scope(Session) as session:
-     engine = session.get_bind()
-     engine.echo = True
+#@contextmanager
+#def session_scope(session):
+#    try:
+#        yield session
+#    finally:
+#        session.close()
+#
+#with session_scope(Session) as session:
+#     engine = session.get_bind()
+#     engine.echo = True
 
 
 class MetricsCollector(object):
