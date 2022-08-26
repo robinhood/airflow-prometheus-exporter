@@ -21,7 +21,7 @@ def debug_sql(session=None):
     engine.echo = True
 
 
-debug_sql()
+#debug_sql()
 
 
 def get_min_date():
