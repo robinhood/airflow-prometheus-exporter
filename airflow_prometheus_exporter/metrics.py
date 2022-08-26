@@ -150,7 +150,7 @@ def get_task_state_info(session=None):
 
 
 @provide_session
-def get_task_failure_counts(session=none):
+def get_task_failure_counts(session=None):
     """Compute Task Failure Counts."""
     return (
         session.query(
@@ -165,7 +165,7 @@ def get_task_failure_counts(session=none):
 
 
 @provide_session
-def get_xcom_params(task_id, session=none):
+def get_xcom_params(task_id, session=None):
     """XCom parameters for matching task_id's for the latest run of a DAG."""
     max_execution_dt_query = (
         session.query(
@@ -344,7 +344,7 @@ def get_active_dag_subquery(session=None):
 
 
 @provide_session
-def get_latest_successful_dag_run(session=none):
+def get_latest_successful_dag_run(session=None):
     # Return in CSV form
     active_dag = get_active_dag_subquery(DagModel)
 
@@ -374,7 +374,7 @@ def get_latest_successful_dag_run(session=none):
 
 
 @provide_session
-def get_latest_successful_task_instance(session=none):
+def get_latest_successful_task_instance(session=None):
     # Return in CSV form
     active_dag = get_active_dag_subquery(DagModel)
 
