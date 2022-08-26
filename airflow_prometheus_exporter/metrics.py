@@ -374,7 +374,7 @@ def get_latest_successful_dag_run(dag_model, dag_run, column_name=False, session
 
 @provide_session
 def get_latest_successful_task_instance(
-    dag_model, dag_run, task_instance, column_name=False, session=None
+    dag_model, task_instance, column_name=False, session=None
 ):
     active_dag = get_active_dag_subquery(dag_model)
 
@@ -383,11 +383,11 @@ def get_latest_successful_task_instance(
         session.query(
             task_instance.dag_id,
             task_instance.task_id,
-            func.max(task_instance.execution_date).label(max_execution_date)
+            func.count(1).label(max_execution_date)
+            #func.max(task_instance.execution_date).label(max_execution_date)
         )
         .select_from(task_instance)
-        .join(dag_run, task_instance.dag_id == dag_run.c.dag_id)
-        .join(active_dag, dag_run.dag_id == active_dag.c.dag_id)
+        .join(active_dag, task_instance.dag_id == active_dag.c.dag_id)
         .filter(
             task_instance.execution_date > get_min_date(),
             task_instance.state == State.SUCCESS,
