@@ -383,13 +383,13 @@ def get_latest_successful_task_instance(
         session.query(
             task_instance.dag_id,
             task_instance.task_id,
-            func.max(dag_run.c.execution_date).label(max_execution_date)
+            func.max(dag_run.execution_date).label(max_execution_date)
         )
         .select_from(task_instance)
         .join(dag_run, task_instance.run_id == dag_run.c.run_id)
         .join(active_dag, task_instance.dag_id == active_dag.c.dag_id)
         .filter(
-            dag_run.c.execution_date > get_min_date(),
+            dag_run.execution_date > get_min_date(),
             task_instance.state == State.SUCCESS,
         )
         .group_by(task_instance.dag_id, task_instance.task_id)
