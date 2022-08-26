@@ -332,7 +332,7 @@ def get_num_queued_tasks(task_instance, session=None):
 
 @provide_session
 def get_active_dag_subquery(dag_model, session=None):
-    subquery = (
+    return (
         session.query(
             dag_model.dag_id
         )
@@ -342,8 +342,6 @@ def get_active_dag_subquery(dag_model, session=None):
         )
         .subquery()
     )
-
-    return subquery
 
 
 @provide_session
@@ -384,7 +382,7 @@ def get_latest_successful_task_instance(
     query = (
         session.query(
             task_instance.dag_id,
-            task_instance.task_id,
+            #task_instance.task_id,
             func.max(task_instance.execution_date).label(max_execution_date)
         )
         .select_from(task_instance)
@@ -393,7 +391,7 @@ def get_latest_successful_task_instance(
             task_instance.execution_date > get_min_date(),
             task_instance.state == State.SUCCESS,
         )
-        .group_by(task_instance.dag_id, task_instance.task_id)
+        .group_by(task_instance.dag_id)#, task_instance.task_id)
         .all()
     )
 
@@ -401,5 +399,5 @@ def get_latest_successful_task_instance(
         yield ",".join(["dag_id", "task_id", max_execution_date]) + "\n"
     for r in query:
         yield ",".join(
-            [r.dag_id, r.task_id, r.max_execution_date.strftime("%Y-%m-%d %H:%M:%S")]
+            [r.dag_id, "r.task_id", r.max_execution_date.strftime("%Y-%m-%d %H:%M:%S")]
         ) + "\n"
