@@ -400,5 +400,5 @@ def get_latest_successful_task_instance(
         yield ",".join(["dag_id", "task_id", max_execution_date]) + "\n"
     for r in query:
         yield ",".join(
-            [r.dag_id, r.task_id, r.max_execution_date.strftime("%Y-%m-%d %H:%M:%S")]
+            [r.dag_id, r.task_id, r.max_execution_date]#.strftime("%Y-%m-%d %H:%M:%S")]
         ) + "\n"
