@@ -15,6 +15,15 @@ CANARY_DAG = "canary_dag"
 RETENTION_TIME = os.environ.get("PROMETHEUS_METRICS_DAYS", 28)
 
 
+@provide_session
+def debug_sql(session=None):
+    engine = session.get_bind()
+    engine.echo = True
+
+
+debug_sql()
+
+
 def get_min_date():
     utc_datetime = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
     return utc_datetime - datetime.timedelta(days=RETENTION_TIME)
