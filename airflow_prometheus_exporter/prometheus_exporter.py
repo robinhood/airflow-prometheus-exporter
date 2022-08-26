@@ -221,7 +221,7 @@ class RBACMetrics(BaseView):
     def task_instance(self):
         return Response(
             get_latest_successful_task_instance(
-                DagModel, TaskInstance, column_name=True
+                DagModel, DagRun, TaskInstance, column_name=True
             ),
             mimetype="text",
         )

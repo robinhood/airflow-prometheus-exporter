@@ -374,7 +374,7 @@ def get_latest_successful_dag_run(dag_model, dag_run, column_name=False, session
 
 @provide_session
 def get_latest_successful_task_instance(
-    dag_model, task_instance, column_name=False, session=None
+    dag_model, dag_run, task_instance, column_name=False, session=None
 ):
     active_dag = get_active_dag_subquery(dag_model)
 
