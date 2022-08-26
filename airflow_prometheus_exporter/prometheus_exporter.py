@@ -1,4 +1,5 @@
 """Prometheus exporter for Airflow."""
+import csv
 import datetime
 import time
 
@@ -189,6 +190,23 @@ class MetricsCollector(object):
 REGISTRY.register(MetricsCollector())
 
 
+class Line(object):
+    def __init__(self):
+        self._line = None
+    def write(self, line):
+        self._line = line
+    def read(self):
+        return self._line
+
+
+def iter_csv(data):
+    line = Line()
+    writer = csv.writer(line)
+    for csv_line in data:
+        writer.writerow(csv_line)
+        yield line.read()
+
+
 class RBACMetrics(BaseView):
     route_base = "/admin/metrics/"
 
@@ -198,11 +216,17 @@ class RBACMetrics(BaseView):
 
     @expose("/ddns/dag_run/")
     def dag_run(self):
-        return Response(get_latest_successful_dag_run(), mimetype="text")
+        return Response(
+            iter_csv(get_latest_successful_dag_run()),
+            mimetype="text/csv"
+        )
 
     @expose("/ddns/task_instance/")
     def task_instance(self):
-        return Response(get_latest_successful_task_instance(), mimetype="text")
+        return Response(
+            iter_csv(get_latest_successful_task_instance()),
+            mimetype="text/csv"
+        )
 
 
 # Metrics View for Flask app builder used in airflow with rbac enabled

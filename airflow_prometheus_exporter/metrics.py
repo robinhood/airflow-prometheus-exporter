@@ -374,12 +374,16 @@ def get_latest_successful_dag_run(session=None):
     )
 
     # Column names
-    yield ",".join(["dag_id", max_execution_date]) + "\n"
+    #yield ",".join(["dag_id", max_execution_date]) + "\n"
 
+    #for r in query:
+    #    yield ",".join(
+    #        [r.dag_id, r.max_execution_date.strftime("%Y-%m-%d %H:%M:%S")]
+    #    ) + "\n"
+
+    yield ["dag_id", max_execution_date]
     for r in query:
-        yield ",".join(
-            [r.dag_id, r.max_execution_date.strftime("%Y-%m-%d %H:%M:%S")]
-        ) + "\n"
+        yield [r.dag_id, r.max_execution_date.strftime("%Y-%m-%d %H:%M:%S")]
 
 
 @provide_session
@@ -406,9 +410,13 @@ def get_latest_successful_task_instance(session=None):
     )
 
     # Column names
-    yield ",".join(["dag_id", "task_id", max_execution_date]) + "\n"
+    #yield ",".join(["dag_id", "task_id", max_execution_date]) + "\n"
 
+    #for r in query:
+    #    yield ",".join(
+    #        [r.dag_id, r.task_id, r.max_execution_date.strftime("%Y-%m-%d %H:%M:%S")]
+    #    ) + "\n"
+
+    yield ["dag_id", "task_id", max_execution_date]
     for r in query:
-        yield ",".join(
-            [r.dag_id, r.task_id, r.max_execution_date.strftime("%Y-%m-%d %H:%M:%S")]
-        ) + "\n"
+        yield [r.dag_id, r.task_id, r.max_execution_date.strftime("%Y-%m-%d %H:%M:%S")]
