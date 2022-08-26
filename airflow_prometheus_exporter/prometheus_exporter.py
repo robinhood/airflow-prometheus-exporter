@@ -8,14 +8,10 @@ from flask_appbuilder import BaseView, expose
 from prometheus_client import REGISTRY, generate_latest
 from prometheus_client.core import GaugeMetricFamily
 
-from airflow.hooks.base import BaseHook
-from airflow.models import DagModel, DagRun, TaskFail, TaskInstance, XCom
 from airflow.plugins_manager import AirflowPlugin
-#from airflow.settings import Session
 from airflow_prometheus_exporter.xcom_config import load_xcom_config
 
 from .metrics import (
-    MISSING,
     extract_xcom_parameter,
     get_dag_duration_info,
     get_dag_scheduler_delay,
@@ -30,17 +26,7 @@ from .metrics import (
     get_xcom_params,
 )
 
-#@contextmanager
-#def session_scope(session):
-#    try:
-#        yield session
-#    finally:
-#        session.close()
-#
-#with session_scope(Session) as session:
-#     engine = session.get_bind()
-#     engine.echo = True
-
+MISSING = "n/a"
 
 class MetricsCollector(object):
     """Metrics Collector for prometheus."""
@@ -54,7 +40,7 @@ class MetricsCollector(object):
         start_time = time.monotonic()
 
         # Task metrics
-        task_info = get_task_state_info(DagRun, TaskInstance, DagModel)
+        task_info = get_task_state_info()
         t_state = GaugeMetricFamily(
             "airflow_task_status",
             "Shows the number of task instances with particular status",
@@ -82,7 +68,7 @@ class MetricsCollector(object):
             "Duration of successful tasks in seconds",
             labels=["task_id", "dag_id", "execution_date"],
         )
-        for task in get_task_duration_info(DagModel, DagRun, TaskInstance):
+        for task in get_task_duration_info():
             task_duration_value = (task.end_date - task.start_date).total_seconds()
             task_duration.add_metric(
                 [
@@ -99,12 +85,12 @@ class MetricsCollector(object):
             "Count of failed tasks",
             labels=["dag_id", "task_id"],
         )
-        for task in get_task_failure_counts(TaskFail, DagModel):
+        for task in get_task_failure_counts():
             task_failure_count.add_metric([task.dag_id, task.task_id], task.count)
         yield task_failure_count
 
         # Dag Metrics
-        dag_info = get_dag_state_info(DagRun, DagModel)
+        dag_info = get_dag_state_info()
         d_state = GaugeMetricFamily(
             "airflow_dag_status",
             "Shows the number of dag starts with this status",
@@ -130,7 +116,7 @@ class MetricsCollector(object):
             "Duration of successful dag_runs in seconds",
             labels=["dag_id"],
         )
-        for dag in get_dag_duration_info(DagRun, DagModel, TaskInstance):
+        for dag in get_dag_duration_info():
             dag_duration_value = (dag.end_date - dag.start_date).total_seconds()
             dag_duration.add_metric([dag.dag_id], dag_duration_value)
         yield dag_duration
@@ -142,7 +128,7 @@ class MetricsCollector(object):
             labels=["dag_id"],
         )
 
-        for dag in get_dag_scheduler_delay(DagRun):
+        for dag in get_dag_scheduler_delay():
             dag_scheduling_delay_value = (
                 dag.start_date - dag.execution_date
             ).total_seconds()
@@ -159,7 +145,7 @@ class MetricsCollector(object):
 
         xcom_config = load_xcom_config()
         for tasks in xcom_config.get("xcom_params", []):
-            for param in get_xcom_params(TaskInstance, DagRun, XCom, tasks["task_id"]):
+            for param in get_xcom_params(tasks["task_id"]):
                 xcom_value = extract_xcom_parameter(param.value)
 
                 if tasks["key"] in xcom_value:
@@ -175,7 +161,7 @@ class MetricsCollector(object):
             labels=["queue"],
         )
 
-        for task in get_task_scheduler_delay(DagRun, TaskInstance):
+        for task in get_task_scheduler_delay():
             task_scheduling_delay_value = (
                 task.start_date - task.queued_dttm
             ).total_seconds()
@@ -186,7 +172,7 @@ class MetricsCollector(object):
             "airflow_num_queued_tasks", "Airflow Number of Queued Tasks"
         )
 
-        num_queued_tasks = get_num_queued_tasks(TaskInstance)
+        num_queued_tasks = get_num_queued_tasks()
         num_queued_tasks_metric.add_metric([], num_queued_tasks)
         yield num_queued_tasks_metric
 
@@ -212,19 +198,11 @@ class RBACMetrics(BaseView):
 
     @expose("/ddns/dag_run/")
     def dag_run(self):
-        return Response(
-            get_latest_successful_dag_run(DagModel, DagRun, column_name=True),
-            mimetype="text",
-        )
+        return Response(get_latest_successful_dag_run(), mimetype="text")
 
     @expose("/ddns/task_instance/")
     def task_instance(self):
-        return Response(
-            get_latest_successful_task_instance(
-                DagModel, DagRun, TaskInstance, column_name=True
-            ),
-            mimetype="text",
-        )
+        return Response(get_latest_successful_task_instance(), mimetype="text")
 
 
 # Metrics View for Flask app builder used in airflow with rbac enabled
