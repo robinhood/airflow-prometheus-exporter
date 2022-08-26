@@ -386,7 +386,7 @@ def get_latest_successful_task_instance(
             func.max(dag_run.execution_date).label(max_execution_date)
         )
         .select_from(task_instance)
-        .join(dag_run, task_instance.run_id == dag_run.c.run_id)
+        .join(dag_run, task_instance.run_id == dag_run.run_id)
         .join(active_dag, task_instance.dag_id == active_dag.c.dag_id)
         .filter(
             dag_run.execution_date > get_min_date(),
