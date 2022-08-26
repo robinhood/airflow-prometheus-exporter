@@ -346,7 +346,7 @@ def get_active_dag_subquery(session=None):
 @provide_session
 def get_latest_successful_dag_run(session=None):
     # Return in CSV form
-    active_dag = get_active_dag_subquery(DagModel)
+    active_dag = get_active_dag_subquery()
 
     max_execution_date = "max_execution_date"
     query = (
@@ -376,7 +376,7 @@ def get_latest_successful_dag_run(session=None):
 @provide_session
 def get_latest_successful_task_instance(session=None):
     # Return in CSV form
-    active_dag = get_active_dag_subquery(DagModel)
+    active_dag = get_active_dag_subquery()
 
     max_execution_date = "max_execution_date"
     query = (
