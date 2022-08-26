@@ -13,6 +13,7 @@ from airflow.utils.state import State
 
 CANARY_DAG = "canary_dag"
 RETENTION_TIME = os.environ.get("PROMETHEUS_METRICS_DAYS", 28)
+DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
 @provide_session
@@ -21,7 +22,7 @@ def debug_sql(session=None):
     engine.echo = True
 
 
-#debug_sql()
+# debug_sql()
 
 
 def get_min_date():
@@ -97,9 +98,7 @@ def get_dag_duration_info(session=None):
                 ),
             ),
         )
-        .filter(
-            TaskInstance.start_date.isnot(None), TaskInstance.end_date.isnot(None)
-        )
+        .filter(TaskInstance.start_date.isnot(None), TaskInstance.end_date.isnot(None))
         .group_by(
             max_execution_dt_query.c.dag_id,
             max_execution_dt_query.c.max_execution_dt,
@@ -341,9 +340,7 @@ def get_num_queued_tasks(session=None):
 @provide_session
 def get_active_dag_subquery(session=None):
     return (
-        session.query(
-            DagModel.dag_id
-        )
+        session.query(DagModel.dag_id)
         .filter(
             DagModel.is_active == True,
             DagModel.is_paused == False,
@@ -359,8 +356,7 @@ def get_latest_successful_dag_run(session=None):
     max_execution_date = "max_execution_date"
     query = (
         session.query(
-            DagRun.dag_id,
-            func.max(DagRun.execution_date).label(max_execution_date)
+            DagRun.dag_id, func.max(DagRun.execution_date).label(max_execution_date)
         )
         .select_from(DagRun)
         .join(active_dag, DagRun.dag_id == active_dag.c.dag_id)
@@ -374,8 +370,9 @@ def get_latest_successful_dag_run(session=None):
 
     # Column names
     yield ["dag_id", max_execution_date]
+    # Data
     for r in query:
-        yield [r.dag_id, r.max_execution_date.strftime("%Y-%m-%d %H:%M:%S")]
+        yield [r.dag_id, r.max_execution_date.strftime(DATETIME_FORMAT)]
 
 
 @provide_session
@@ -387,7 +384,7 @@ def get_latest_successful_task_instance(session=None):
         session.query(
             TaskInstance.dag_id,
             TaskInstance.task_id,
-            func.max(DagRun.execution_date).label(max_execution_date)
+            func.max(DagRun.execution_date).label(max_execution_date),
         )
         .select_from(TaskInstance)
         .join(DagRun, TaskInstance.run_id == DagRun.run_id)
@@ -402,5 +399,6 @@ def get_latest_successful_task_instance(session=None):
 
     # Column names
     yield ["dag_id", "task_id", max_execution_date]
+    # Data
     for r in query:
-        yield [r.dag_id, r.task_id, r.max_execution_date.strftime("%Y-%m-%d %H:%M:%S")]
+        yield [r.dag_id, r.task_id, r.max_execution_date.strftime(DATETIME_FORMAT)]
