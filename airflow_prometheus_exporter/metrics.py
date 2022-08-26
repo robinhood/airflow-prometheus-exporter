@@ -357,7 +357,7 @@ def get_latest_successful_dag_run(dag_model, dag_run, column_name=False, session
             func.max(dag_run.execution_date).label(max_execution_date)
         )
         .select_from(dag_run)
-        .join(dag_run, dag_run.dag_id == active_dag.c.dag_id)
+        .join(active_dag, dag_run.dag_id == active_dag.c.dag_id)
         .filter(
             dag_run.execution_date > get_min_date(),
             dag_run.state == State.SUCCESS,
@@ -388,7 +388,7 @@ def get_latest_successful_task_instance(
             func.max(task_instance.execution_date).label(max_execution_date)
         )
         .select_from(task_instance)
-        .join(task_instance, task_instance.dag_id == active_dag.c.dag_id)
+        .join(active_dag, task_instance.dag_id == active_dag.c.dag_id)
         .filter(
             task_instance.execution_date > get_min_date(),
             task_instance.state == State.SUCCESS,
