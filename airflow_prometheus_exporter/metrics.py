@@ -353,10 +353,9 @@ def get_active_dag_subquery(session=None):
 def get_latest_successful_dag_run(session=None):
     active_dag = get_active_dag_subquery()
 
-    max_execution_date = "max_execution_date"
     query = (
         session.query(
-            DagRun.dag_id, func.max(DagRun.execution_date).label(max_execution_date)
+            DagRun.dag_id, func.max(DagRun.execution_date).label("max_execution_date")
         )
         .select_from(DagRun)
         .join(active_dag, DagRun.dag_id == active_dag.c.dag_id)
@@ -369,7 +368,7 @@ def get_latest_successful_dag_run(session=None):
     )
 
     # Column names
-    yield ["dag_id", max_execution_date]
+    yield ["dag_id", "latest_successful_run"]
     # Data
     for r in query:
         yield [r.dag_id, r.max_execution_date.strftime(DATETIME_FORMAT)]
@@ -379,12 +378,11 @@ def get_latest_successful_dag_run(session=None):
 def get_latest_successful_task_instance(session=None):
     active_dag = get_active_dag_subquery()
 
-    max_execution_date = "max_execution_date"
     query = (
         session.query(
             TaskInstance.dag_id,
             TaskInstance.task_id,
-            func.max(DagRun.execution_date).label(max_execution_date),
+            func.max(DagRun.execution_date).label("max_execution_date"),
         )
         .select_from(TaskInstance)
         .join(DagRun, TaskInstance.run_id == DagRun.run_id)
@@ -398,7 +396,7 @@ def get_latest_successful_task_instance(session=None):
     )
 
     # Column names
-    yield ["dag_id", "task_id", max_execution_date]
+    yield ["dag_id", "task_id", "latest_successful_run"]
     # Data
     for r in query:
         yield [r.dag_id, r.task_id, r.max_execution_date.strftime(DATETIME_FORMAT)]
